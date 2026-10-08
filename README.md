@@ -21,23 +21,19 @@ Application web installable (PWA) pour les concours de fléchettes du bar, hébe
 Le dépôt GitHub et GitHub Pages sont déjà en place. Il reste :
 
 1. **Source de GitHub Pages** : dans le dépôt, **Settings › Pages › Build and deployment › Source** = **GitHub Actions** (et non « Deploy from a branch »).
-2. **Deux secrets GitHub** : **Settings › Secrets and variables › Actions › New repository secret** :
+2. **Un secret GitHub** : **Settings › Secrets and variables › Actions**, onglet **Secrets**, **New repository secret** :
    - `SUPABASE_ACCESS_TOKEN` : sur supabase.com, **Account › Access Tokens › Generate new token**, copiez le jeton.
-   - `STAFF_KEY` : une longue suite de caractères au hasard (au moins 12, par exemple `bar-lattes-7Hq2xP9mZk4w`). Personne n'aura à la taper : elle est contenue dans le QR code et le lien staff.
 3. **Lancer le déploiement** : onglet **Actions › Déployer › Run workflow** (il se relance aussi tout seul à chaque modification du dépôt). Il :
    - crée ou met à jour les tables, les règles d'accès et les tâches planifiées de la base (fichiers de `supabase/migrations`, chacun appliqué une seule fois) ;
-   - active les sessions anonymes pour les appareils du staff et désactive la connexion par e-mail ;
+   - active l'ouverture directe de l'espace staff et désactive la connexion par e-mail ;
    - déploie les fonctions `report`, `push` et `sync-store` ;
    - écrit la clé publique du projet dans `web/config.js` et publie le site.
-4. **Lien staff** : `https://VOTRE-COMPTE.github.io/VOTRE-DEPOT/staff.html#acces=VOTRE_STAFF_KEY`. Ouvrez-le une fois ; ensuite le QR code staff s'affiche dans **Réglages › Accès staff**.
+4. **Espace staff** : `https://VOTRE-COMPTE.github.io/VOTRE-DEPOT/staff.html`. Il s'ouvre directement ; son QR code est dans **Réglages › Accès staff**.
 
-## Accès du staff : QR code fixe ou lien, rien à saisir
-- **Tablette ou téléphone** : scanner le **QR code staff** avec l'appareil photo. L'espace staff s'ouvre directement.
-- **Ordinateur** : ouvrir le **lien staff** (à mettre en favori).
-- Le QR code et le lien sont fixes. Ils sont affichés dans **Réglages › Accès staff**, avec **Télécharger le QR code** et **Copier le lien**.
-- Une fois ouvert, l'appareil reste connecté, même sans le lien.
-- Gardez le QR code hors de la vue des clients : il donne accès à tout l'espace staff.
-- Pour le changer (fuite, ancien employé), modifiez le secret `STAFF_KEY` dans GitHub et relancez **Déployer**. Les appareils déjà ouverts restent connectés.
+## Accès du staff : direct, sans identifiant ni code
+- **Tablette ou téléphone** : scanner le **QR code staff** (Réglages › Accès staff). **Ordinateur** : ouvrir le lien `…/staff.html` (à mettre en favori).
+- L'espace staff s'ouvre directement. Aucun bouton n'y mène depuis les pages joueurs, l'écran TV ou l'écran comptoir.
+- Attention : toute personne qui connaît l'adresse `staff.html` accède à l'espace staff (concours, résultats, numéros de téléphone des joueurs). Ne l'affichez pas à la vue des clients.
 
 ## Les joueurs
 1. **Inscription** sur le téléphone : prénoms, niveaux, numéro de téléphone du capitaine. Le numéro n'est jamais affiché ; seul le staff le voit.
@@ -109,7 +105,7 @@ web/                           le site publié (aucune donnée stockée sur GitH
 
 ## Ce qui a été testé
 - Le schéma a été appliqué sur PostgreSQL 16. Testés :
-  - accès staff : lien fixe accepté, lien faux refusé, actions staff refusées au public ;
+  - accès staff : ouverture directe de la page staff, actions staff refusées aux pages joueurs ;
   - inscription par téléphone : numéro obligatoire, normalisé, une équipe par numéro ;
   - nom d'équipe repris avec le même numéro, refusé à un autre numéro, suivi « Mes scores » ;
   - liste d'attente : promotion, message « place libérée » et appel de la fonction `push` ;

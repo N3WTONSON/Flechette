@@ -1,8 +1,7 @@
 # Déploie tout à chaque push sur main : base Supabase (tables, fonctions SQL, tâches planifiées),
 # fonctions Supabase (report, push, sync-store), puis le site sur GitHub Pages.
-# Rien à exécuter à la main. Secrets à créer une fois dans GitHub (Settings › Secrets and variables › Actions) :
+# Rien à exécuter à la main. Un seul secret à créer dans GitHub (Settings › Secrets and variables › Actions) :
 #   SUPABASE_ACCESS_TOKEN : jeton personnel Supabase (supabase.com › Account › Access Tokens)
-#   STAFF_KEY             : une longue suite de caractères au hasard, pour autoriser le premier appareil du staff
 name: Déployer
 on:
   push:
@@ -23,7 +22,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      STAFF_KEY: ${{ secrets.STAFF_KEY }}
       PROJECT_REF: ifjiysdhxmidiswcsiuq
     steps:
       - uses: actions/checkout@v4

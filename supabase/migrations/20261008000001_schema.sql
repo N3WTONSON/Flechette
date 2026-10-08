@@ -26,10 +26,10 @@ insert into public.venues (name, address, hours, closures, settings) values (
   '{"machines":2,"changeMin":2,"happyHour":["17:00","19:00"],"durations":{"301":6,"501":10,"701":14,"Standard Cricket":12,"Select-a-Cricket":10,"Medley 3 manches":25,"Lucky Balloon":5,"Castle Bomber":6,"Survivor":6,"Sevens Heaven":6,"Under the Hat":6}}'
 );
 
--- ---------- Staff : accès par appareil (ni e-mail, ni mot de passe) ----------
--- Chaque tablette ou téléphone du staff ouvre une session Supabase anonyme, puis est autorisé
--- par un lien d'invitation (QR code affiché sur un appareil déjà autorisé, valable 30 minutes, usage unique).
--- Le tout premier appareil est autorisé avec le lien d'installation (clé STAFF_KEY des secrets GitHub).
+-- ---------- Staff : accès direct, sans identifiant ni code ----------
+-- Chaque appareil qui ouvre la page staff (staff.html) ouvre une session Supabase anonyme et
+-- s'enregistre ici automatiquement : il obtient les droits du staff. Les pages joueurs n'ont pas
+-- de session et n'y passent jamais.
 create table public.staff_devices (
   user_id uuid primary key,                 -- auth.uid() de la session anonyme de l'appareil
   name text not null check (char_length(name) between 1 and 40),
@@ -37,14 +37,6 @@ create table public.staff_devices (
   last_seen timestamptz not null default now(),
   revoked_at timestamptz
 );
-create table public.staff_invites (
-  token_hash text primary key,              -- sha256 du jeton ; le jeton lui-même n'est jamais stocké
-  kind text not null default 'invite' check (kind in ('invite','setup')),
-  expires_at timestamptz,                   -- null = lien d'installation (sans expiration, remplaçable par le déploiement)
-  used_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
 create or replace function public.is_staff() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.staff_devices where user_id = auth.uid() and revoked_at is null);
@@ -506,7 +498,6 @@ grant execute on function public.pair_solos, public.is_staff to authenticated;
 -- ============================================================
 alter table public.venues enable row level security;
 alter table public.staff_devices enable row level security;
-alter table public.staff_invites enable row level security;
 alter table public.seasons enable row level security;
 alter table public.contests enable row level security;
 alter table public.events enable row level security;
@@ -521,7 +512,6 @@ create policy "lecture publique" on public.venues for select using (true);
 create policy "staff écrit" on public.venues for update using (public.is_staff());
 
 create policy "staff" on public.staff_devices for select to authenticated using (public.is_staff());
--- staff_invites : aucune politique, accès uniquement par les fonctions ci-dessous
 
 create policy "lecture publique" on public.seasons for select using (true);
 create policy "staff écrit" on public.seasons for all using (public.is_staff()) with check (public.is_staff());
@@ -649,24 +639,14 @@ alter table public.push_keys enable row level security;
 -- aucune politique : ces tables ne sont lues que par la fonction « push » (clé service)
 
 -- ============================================================
--- Staff : autoriser un appareil, inviter, retirer
+-- Staff : enregistrement de l'appareil à l'ouverture de la page staff
 -- ============================================================
--- Appelée par un appareil qui a ouvert une session anonyme, avec le jeton du lien (installation ou invitation)
-create or replace function public.join_staff(p_token text, p_name text) returns boolean
+create or replace function public.join_staff(p_name text) returns boolean
 language plpgsql security definer set search_path = public as $$
-declare v record; h text;
 begin
   if auth.uid() is null then raise exception 'Session manquante'; end if;
-  if coalesce(trim(p_name), '') = '' then raise exception 'Donnez un nom à cet appareil'; end if;
-  h := encode(extensions.digest(coalesce(p_token, ''), 'sha256'), 'hex');
-  select * into v from public.staff_invites where token_hash = h for update;
-  if not found or (v.kind = 'invite' and (v.used_at is not null or v.expires_at < now())) then
-    perform pg_sleep(1);
-    raise exception 'Lien d''accès invalide ou expiré. Demandez un nouveau QR code à un appareil du staff.';
-  end if;
-  if v.kind = 'invite' then update public.staff_invites set used_at = now() where token_hash = h; end if;
-  insert into public.staff_devices (user_id, name) values (auth.uid(), left(trim(p_name), 40))
-    on conflict (user_id) do update set name = excluded.name, revoked_at = null, last_seen = now();
+  insert into public.staff_devices (user_id, name) values (auth.uid(), left(coalesce(nullif(trim(p_name), ''), 'Appareil'), 40))
+    on conflict (user_id) do update set revoked_at = null, last_seen = now();
   return true;
 end $$;
 
@@ -680,27 +660,8 @@ begin
   return json_build_object('name', d.name, 'since', d.created_at);
 end $$;
 
--- QR code « Ajouter un appareil » : lien valable 30 minutes, utilisable une seule fois
-create or replace function public.create_staff_invite() returns text
-language plpgsql security definer set search_path = public as $$
-declare t text;
-begin
-  if not public.is_staff() then raise exception 'Réservé au staff'; end if;
-  t := encode(extensions.gen_random_bytes(18), 'hex');
-  delete from public.staff_invites where kind = 'invite' and (used_at is not null or expires_at < now());
-  insert into public.staff_invites (token_hash, kind, expires_at) values (encode(extensions.digest(t, 'sha256'), 'hex'), 'invite', now() + interval '30 minutes');
-  return t;
-end $$;
-
-create or replace function public.revoke_staff_device(p_user uuid) returns void
-language plpgsql security definer set search_path = public as $$
-begin
-  if not public.is_staff() then raise exception 'Réservé au staff'; end if;
-  update public.staff_devices set revoked_at = now() where user_id = p_user;
-end $$;
-
-revoke execute on function public.join_staff, public.staff_hello, public.create_staff_invite, public.revoke_staff_device from public, anon;
-grant execute on function public.join_staff, public.staff_hello, public.create_staff_invite, public.revoke_staff_device to authenticated;
+revoke execute on function public.join_staff, public.staff_hello from public, anon;
+grant execute on function public.join_staff, public.staff_hello to authenticated;
 
 -- ============================================================
 -- Concours de test (créé et effacé depuis l'espace staff, onglet Réglages)

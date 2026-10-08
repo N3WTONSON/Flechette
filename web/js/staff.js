@@ -12,25 +12,25 @@ const TABS = [['jourj', 'Jour J'], ['equipes', 'Équipes'], ['concours', 'Concou
 let venue, settings, events = [], seasons = [], contests = [], cid = sessionStorage.getItem('vb-cid'), tab = sessionStorage.getItem('vb-tab') || 'jourj';
 let regs = [], c = null, editing = null, confirmKey = null, pick = null, busy = false;
 
-/* ---------- accès direct par QR code fixe (tablette) ou lien (PC) ----------
-   Rien à saisir : le QR code / lien staff contient la clé d'accès. Ouvert une fois, l'appareil reste connecté. */
+/* ---------- accès direct : la page staff s'ouvre sans identifiant ni code ----------
+   À la première ouverture, l'appareil ouvre une session et s'enregistre comme appareil du staff. */
 let me = null;
-const STAFF_KEY_LS = 'vb-staff-key';
 const deviceName = () => /iPad|Tablet|Android(?!.*Mobile)/i.test(navigator.userAgent) ? 'Tablette' : /Mobi|iPhone|Android/i.test(navigator.userAgent) ? 'Téléphone' : 'Ordinateur';
-function staffKey() { const h = new URLSearchParams(location.hash.slice(1)).get('acces'); if (h) return h; try { return localStorage.getItem(STAFF_KEY_LS); } catch { return null; } }
 async function boot() {
-  const key = staffKey();
   let { data: { session } } = await sb.auth.getSession();
   let hello = session ? (await sb.rpc('staff_hello')).data : null;
-  if (!hello && key) {
+  if (!hello) {
     main.innerHTML = '<div class="empty">Ouverture de l’espace staff…</div>';
-    if (!session) { const r = await sb.auth.signInAnonymously(); if (r.error) return noAccess('Connexion impossible : ' + r.error.message); session = r.data?.session || (await sb.auth.getSession()).data.session; }
-    const { error } = await sb.rpc('join_staff', { p_token: key, p_name: deviceName() });
-    if (error) { try { localStorage.removeItem(STAFF_KEY_LS); } catch {} return noAccess('Ce lien staff n’est plus valable. Utilisez le QR code ou le lien staff à jour.'); }
+    if (!session) {
+      const r = await sb.auth.signInAnonymously();
+      if (r.error) return failed('Connexion impossible : ' + r.error.message);
+      session = r.data?.session || (await sb.auth.getSession()).data.session;
+    }
+    const { error } = await sb.rpc('join_staff', { p_name: deviceName() });
+    if (error) return failed(error.message);
     hello = (await sb.rpc('staff_hello')).data;
+    if (!hello) return failed('L’espace staff n’a pas pu s’ouvrir.');
   }
-  if (!hello) return noAccess();
-  try { if (key) localStorage.setItem(STAFF_KEY_LS, key); } catch {}
   if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   me = { ...hello, uid: session.user.id };
   topbar.innerHTML = `<a class="btn ghost sm" href="comptoir.html" target="_blank" rel="noopener">Écran comptoir</a><a class="btn ghost sm" href="suivi.html" target="_blank" rel="noopener">Écran TV</a><a class="btn ghost sm" href="./" target="_blank" rel="noopener">Page joueurs</a><a class="btn ghost sm" href="test.html" target="_blank" rel="noopener">Page test téléphone</a>`;
@@ -40,13 +40,12 @@ async function boot() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => { if (!busy && !pick) reloadContest().then(render); }).subscribe();
   if (KIOSK) { try { await navigator.wakeLock?.request('screen'); } catch {} }
 }
-function noAccess(msg) {
+function failed(msg) {
   tabsEl.classList.add('hidden');
-  main.innerHTML = `<section class="panel" style="max-width:560px"><h2>Espace staff</h2>${msg ? `<div class="notice bad">${esc(msg)}</div>` : ''}
-    <p>Ouvrez l’espace staff avec le <b>QR code staff</b> (tablette, téléphone) ou le <b>lien staff</b> (ordinateur). Rien à saisir : l’appareil reste ensuite connecté.</p>
-    <p class="muted small">Le QR code et le lien se trouvent dans l’espace staff, onglet Réglages, sur un appareil déjà ouvert.</p><div class="row"><a class="btn ghost" href="./">Page joueurs</a></div></section>`;
+  main.innerHTML = `<section class="panel" style="max-width:560px"><h2>Espace staff</h2><div class="notice bad">${esc(msg)}</div>
+    <p class="muted small">Vérifiez la connexion internet puis rechargez la page. Si le message revient, le déploiement n’est peut-être pas terminé (GitHub › Actions › Déployer).</p></section>`;
 }
-function staffLink() { const k = staffKey(); return k ? new URL('staff.html', location.href).href + '#acces=' + encodeURIComponent(k) : null; }
+const staffLink = () => new URL('staff.html', location.href).href;
 
 /* ---------- données ---------- */
 async function reloadAll() {
@@ -340,10 +339,10 @@ function vReglages() {
   const sy = venue.settings?.syncedAt ? new Date(venue.settings.syncedAt).toLocaleString('fr-FR', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : 'jamais';
   const link = staffLink(), testUrl = new URL('test.html', location.href).href;
   return `<div class="cols" style="margin-bottom:18px"><section class="panel"><h2>Accès staff</h2>
-    ${link ? `<p class="small"><b>Tablette ou téléphone :</b> scannez ce QR code avec l’appareil photo. <b>Ordinateur :</b> ouvrez le lien. Rien à saisir, l’appareil reste connecté.</p>
+    ${link ? `<p class="small"><b>Tablette ou téléphone :</b> scannez ce QR code avec l’appareil photo. <b>Ordinateur :</b> ouvrez le lien (à mettre en favori). L’espace staff s’ouvre directement, sans identifiant ni code.</p>
     <div class="row" style="align-items:flex-start;gap:16px"><div class="qrBox" id="staffQR" style="width:180px"></div><div class="stack" style="flex:1;min-width:200px"><span class="linkLine" id="staffLink">${esc(link)}</span>
     <div class="row"><button type="button" class="btn ghost sm" data-act="copy" data-src="staffLink">Copier le lien</button><button type="button" class="btn ghost sm" data-act="dlStaffQR">Télécharger le QR code</button></div>
-    <p class="muted small">Gardez-les hors de la vue des clients : ils donnent accès à tout l’espace staff.</p></div></div>` : '<p class="muted small">Cet appareil a été ouvert avant la mise en place du lien fixe : ouvrez-le une fois avec le lien staff pour afficher ici le QR code.</p>'}</section>
+    <p class="muted small">Cette adresse n’apparaît nulle part côté joueurs. Ne l’affichez pas à la vue des clients : quiconque l’ouvre accède à l’espace staff.</p></div></div>` : ''}</section>
     <section class="panel"><h2>Page test téléphone</h2><p class="small">Pour vérifier qu’un téléphone gère tout (connexion, direct, notifications, inscription, Mon match, Mes scores). Scannez avec le téléphone à tester :</p>
     <div class="row" style="align-items:flex-start;gap:16px"><div class="qrBox" id="testQR" style="width:150px"></div><div class="stack" style="flex:1;min-width:180px"><span class="linkLine">${esc(testUrl)}</span><p class="muted small">Créez d’abord le concours de test plus bas pour pouvoir faire le parcours complet.</p></div></div></section></div>`
     + vReglagesBase() + `<section class="panel" style="margin-top:18px"><h2>Concours de test</h2><p class="muted small">Crée un concours d’essai « (test) » avec 12 équipes (10 présentes) pour s’entraîner : tirage, machines, page joueurs (codes d’équipe 1001 à 1012) et écran TV. Il ne compte jamais dans le classement de la saison ; effacez-le après l’essai.</p>

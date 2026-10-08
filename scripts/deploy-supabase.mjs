@@ -2,15 +2,12 @@
 // Utilise l'API de gestion Supabase avec le jeton SUPABASE_ACCESS_TOKEN (secret GitHub) :
 //   1. autorise les connexions anonymes (appareils du staff) et coupe les e-mails d'authentification ;
 //   2. applique les fichiers de supabase/migrations qui ne l'ont pas encore été ;
-//   3. enregistre le lien d'installation du staff (secret STAFF_KEY, seule son empreinte est stockée) ;
-//   4. écrit la clé publique « anon » dans web/config.js pour la publication du site.
+//   3. écrit la clé publique « anon » dans web/config.js pour la publication du site.
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
 
 const REF = process.env.PROJECT_REF || 'ifjiysdhxmidiswcsiuq';
 const TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
-const STAFF_KEY = (process.env.STAFF_KEY || '').trim();
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 if (!TOKEN) { console.log('::error::Secret GitHub SUPABASE_ACCESS_TOKEN manquant (voir README, étape 2).'); process.exit(1); }
 
@@ -58,16 +55,7 @@ for (const f of files) {
   console.log(`✓ ${name} appliquée`);
 }
 
-// 3. Lien d'installation du staff
-if (STAFF_KEY) {
-  if (STAFF_KEY.length < 12) throw new Error('STAFF_KEY doit faire au moins 12 caractères.');
-  const h = crypto.createHash('sha256').update(STAFF_KEY).digest('hex');
-  await sql(`delete from public.staff_invites where kind = 'setup' and token_hash <> '${h}';
-             insert into public.staff_invites (token_hash, kind) values ('${h}', 'setup') on conflict (token_hash) do nothing;`);
-  console.log('✓ Lien staff enregistré : <adresse du site>/staff.html#acces=<STAFF_KEY>');
-} else console.log('::notice::Pas de secret STAFF_KEY : l’espace staff ne pourra pas être ouvert (voir README).');
-
-// 4. Clé publique pour le site
+// 3. Clé publique pour le site
 const keys = await api('GET', '/api-keys');
 const anon = Array.isArray(keys.data) ? keys.data.find((k) => k.name === 'anon' && k.api_key) : null;
 if (!anon) throw new Error(`Clé anon introuvable (${keys.status}).`);

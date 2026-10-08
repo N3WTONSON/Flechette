@@ -10,12 +10,12 @@ export function guideHTML() {
 
   ${S('1. Les trois écrans', `
     <ul>
-      <li><b>Espace staff</b> (cet écran) : pour tout gérer. On l’ouvre sur la tablette en scannant le <b>QR code staff</b>, ou sur l’ordinateur avec le <b>lien staff</b> (onglet Réglages). Il n’y a rien à taper et l’appareil reste ouvert.</li>
+      <li><b>Espace staff</b> (cet écran) : pour tout gérer. Il s’ouvre directement, sans identifiant ni code : sur la tablette en scannant le <b>QR code staff</b>, sur l’ordinateur avec le <b>lien staff</b> (tous deux dans l’onglet Réglages).</li>
       <li><b>Page joueurs</b> : ce que voient les clients sur leur téléphone. Ils s’y inscrivent, suivent le tableau et déclarent leurs résultats. Ils n’ont <b>aucun accès</b> à l’espace staff.</li>
       <li><b>Écran TV</b> : le tableau du tournoi en direct, à afficher sur la télé ou le projecteur. On n’y touche pas, il se met à jour tout seul.</li>
       <li><b>Écran comptoir</b> : une version simplifiée pour la tablette posée près des machines (inscription sur place, pointage, machines). Il n’affiche aucun bouton vers l’espace staff : pour en sortir, <b>restez appuyé 3 secondes sur l’heure</b> en haut à droite.</li>
     </ul>
-    <p class="muted small">Ne laissez pas le QR code staff à la vue des clients : il ouvre tout l’espace staff.</p>`, true)}
+    <p class="muted small">L’adresse de l’espace staff n’apparaît nulle part côté joueurs. Ne l’affichez pas à la vue des clients : elle ouvre tout l’espace staff.</p>`, true)}
 
   ${S('2. Créer un concours', `
     <ol>
