@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mon inscription · Fléchettes V and B Lattes</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap" style="max-width:640px">
+  <header class="top"><div class="eyebrow">V and B Montpellier Lattes · Fléchettes</div><h1 style="font-size:clamp(36px,9vw,64px)">Mon inscription</h1></header>
+  <main id="main"><div class="empty">Chargement…</div></main>
+  <p class="legal"><a href="./">Voir les concours</a><br>Concours réservé aux majeurs. L’abus d’alcool est dangereux pour la santé, à consommer avec modération.</p>
+</div>
+<script type="module">
+import { sb } from './js/sb.js';
+import { $, esc, fmtDate, toast } from './js/util.js';
+const main = $('#main'), p = new URLSearchParams(location.search), t = p.get('t'), u = p.get('u');
+let confirmKey = null;
+
+async function load() {
+  if (u) {
+    const { data, error } = await sb.rpc('unsubscribe_news', { p_token: u });
+    main.innerHTML = error || !data ? '<div class="notice bad">Lien invalide ou déjà utilisé.</div>' : '<div class="notice good">C’est fait : vous ne recevrez plus les annonces des prochains concours.</div>';
+    return;
+  }
+  if (!t) { main.innerHTML = '<div class="notice bad">Lien incomplet. Utilisez le lien reçu par e-mail.</div>'; return; }
+  const { data: r, error } = await sb.rpc('get_registration', { p_token: t });
+  if (error || !r) { main.innerHTML = '<div class="notice bad">Inscription introuvable. Le lien est peut-être incomplet.</div>'; return; }
+  const k = r.contest, cancelled = r.status === 'annulee', started = k.status === 'en_cours' || k.status === 'termine';
+  main.innerHTML = `<section class="panel"><div class="row">${cancelled ? '<span class="pill">Annulée</span>' : r.status === 'attente' ? '<span class="pill warn">Liste d’attente</span>' : '<span class="pill ok">Confirmée</span>'}</div>
+    <h2>${esc(r.team)}</h2><p>${esc(r.captain)}${r.mate ? ' &amp; ' + esc(r.mate) : ' · joueur solo'}</p>
+    <p><b>${esc(fmtDate(k.date, true))} à ${k.start.replace(':', 'h')}</b> · ${esc(k.game)}</p>
+    ${!cancelled && !started ? (confirmKey === 'cancel'
+      ? `<div class="confirmRow"><span>Annuler l’inscription ? La place ira à la première équipe en attente.</span><button class="btn red" id="doCancel">Oui, annuler</button><button class="btn ghost" id="no">Garder ma place</button></div>`
+      : '<div class="row"><button class="btn red" id="askCancel">Annuler mon inscription</button></div>') : ''}
+    ${started ? '<p class="muted">Le concours a commencé : l’inscription ne peut plus être annulée en ligne.</p>' : ''}</section>
+    <section class="panel" style="margin-top:18px"><h3>Mes données</h3><p class="small">Nous gardons seulement votre prénom, votre niveau et un moyen de contact. ${r.consent_news ? 'Vous recevez les annonces des prochains concours.' : ''}</p>
+    ${confirmKey === 'erase'
+      ? '<div class="confirmRow"><span>Supprimer définitivement vos données ? Votre équipe restera dans les résultats passés sous un nom anonyme.</span><button class="btn red" id="doErase">Supprimer</button><button class="btn ghost" id="no">Annuler</button></div>'
+      : '<div class="row"><button class="btn ghost" id="askErase">Supprimer mes données</button></div>'}</section>`;
+}
+main.addEventListener('click', async (e) => {
+  const id = e.target.id;
+  if (id === 'askCancel') { confirmKey = 'cancel'; return load(); }
+  if (id === 'askErase') { confirmKey = 'erase'; return load(); }
+  if (id === 'no') { confirmKey = null; return load(); }
+  if (id === 'doCancel') {
+    const { data: promoted, error } = await sb.rpc('cancel_registration', { p_token: t });
+    if (error) return toast(error.message.replace(/^.*?: /, ''));
+    if (promoted) sb.functions.invoke('notify', { body: { promoted_registration_id: promoted } }).catch(() => {});
+    confirmKey = null; toast('Inscription annulée'); return load();
+  }
+  if (id === 'doErase') {
+    const { error } = await sb.rpc('erase_my_data', { p_token: t });
+    if (error) return toast(error.message.replace(/^.*?: /, ''));
+    main.innerHTML = '<div class="notice good">Vos données ont été supprimées.</div>';
+  }
+});
+load();
+</script>
+</body>
+</html>

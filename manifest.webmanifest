@@ -1,0 +1,12 @@
+{
+  "name": "Concours de fléchettes – V and B Lattes",
+  "short_name": "Fléchettes",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#1c1714",
+  "theme_color": "#1c1714",
+  "lang": "fr",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Suivi en direct · Fléchettes V and B Lattes</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1c1714">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+</head>
+<body>
+<!-- Écran de suivi pour la télévision du bar : affichage seul, mis à jour en temps réel, sans compte. -->
+<div id="app"><div class="disp"><div class="empty">Chargement…</div></div></div>
+<script type="module">
+import { sb, loadVenue, loadContestFull } from './js/sb.js';
+import { SITE_URL } from './config.js';
+import { $, esc, fmtDate, hhmm, hm, fmtHM, nowMin, today, weekMonday, hoursOf, contestStatus } from './js/util.js';
+import * as E from './js/engine.js';
+import { bracketHTML, poolsHTML, tname } from './js/views.js';
+
+const app = $('#app');
+let venue, settings, c = null, records = [], page = 0, channel = null, timer = null;
+try { navigator.wakeLock?.request('screen').catch(() => {}); } catch {}
+
+function teamState(t) {
+  if (t.status === 'attente') return { k: 'wait', l: 'Liste d’attente' };
+  if (c.status === 'ouvert') return t.present ? { k: 'ok', l: 'Présente' } : { k: 'idle', l: 'Attendue' };
+  if (!t.present) return { k: 'idle', l: 'Absente' };
+  if (c.status === 'termine') { const p = E.podium(c).indexOf(t.id); return p >= 0 ? { k: 'medal', l: ['1re place', '2e place', '3e place'][p], p } : { k: 'idle', l: 'Terminé' }; }
+  const lv = E.lives(c).find((m) => m.a === t.id || m.b === t.id); if (lv) return { k: 'live', l: `Machine ${lv.machine || 1}` };
+  if (E.launchable(c).slice(0, E.machines(settings)).some((m) => m.a === t.id || m.b === t.id)) return { k: 'next', l: 'Prochain match' };
+  if (c.matches.some((m) => m.status !== 'done' && (m.a === t.id || m.b === t.id))) return { k: 'ok', l: 'En lice' };
+  if (c.phase === 'pools') {
+    if (!E.poolsDone(c)) return { k: 'ok', l: 'Poule jouée' };
+    const q = c.pools.some((p, gi) => E.poolTable(c, gi).slice(0, c.pools.length === 1 ? Math.min(4, p.ids.length) : 2).some((r) => r.id === t.id));
+    return q ? { k: 'ok', l: 'Qualifiée' } : { k: 'out', l: 'Éliminée' };
+  }
+  return { k: 'out', l: 'Éliminée' };
+}
+const since = (iso) => { if (!iso) return ''; const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000)); return m < 1 ? 'à l’instant' : `depuis ${m} min`; };
+
+function render() {
+  if (!c) { app.innerHTML = '<div class="disp"><div class="empty">Aucun concours à l’affiche.</div></div>'; return; }
+  const teams = c.teams.filter((t) => t.status !== 'annulee'), conf = teams.filter((t) => t.status === 'confirmee');
+  const pres = conf.filter((t) => t.present).length, run = c.status === 'en_cours', N = E.machines(settings);
+  const played = c.matches.filter((m) => m.status === 'done' && !m.bye).length, total = c.matches.filter((m) => !(m.status === 'done' && m.bye)).length;
+  const h = hoursOf(venue, c.date), end = run ? (c.date === today() ? Math.max(nowMin(), hm(c.start_time)) : hm(c.start_time)) + E.remainingMin(c, settings) : null;
+  const head = `<div class="dhead"><div><div class="eyebrow">Concours de fléchettes · ${esc(fmtDate(c.date))} · ${hhmm(c.start_time).replace(':', 'h')}</div><div class="dtitle">${run ? 'En direct' : c.status === 'termine' ? 'Résultats' : 'Inscriptions'}</div></div>
+    <div class="kstats"><div><b class="num">${conf.length}/${c.max_teams}</b><span>équipes</span></div><div><b class="num">${pres}</b><span>présentes</span></div>
+    ${run ? `<div><b class="num">${played}/${total}</b><span>matchs joués</span></div><div><b class="num"${h && end > h.close ? ' style="color:var(--orange)"' : ''}>${fmtHM(end)}</b><span>fin estimée</span></div>` : `<div><b class="num">${Math.max(0, c.max_teams - conf.length)}</b><span>places libres</span></div>`}
+    <div><b class="num">${fmtHM(nowMin())}</b><span>heure</span></div></div></div>`;
+  const per = 12, pages = Math.max(1, Math.ceil(teams.length / per)), pg = page % pages;
+  const col1 = `<section class="panel dcol"><div class="row" style="justify-content:space-between"><h2>Équipes</h2>${pages > 1 ? `<span class="muted num">${pg + 1}/${pages}</span>` : ''}</div>
+    ${teams.length ? `<ul class="dteams">${teams.slice(pg * per, pg * per + per).map((t, i) => { const s = teamState(t); return `<li><span class="n num">${pg * per + i + 1}</span><span class="who"><b>${esc(t.team_name)}</b><small>${esc(t.captain_name)}${t.mate_name ? ' &amp; ' + esc(t.mate_name) : ' · solo'}</small></span><span class="dst ${s.k}">${s.k === 'medal' ? `<span class="medal m${s.p + 1}">${s.p + 1}</span>` : ''}${s.l}</span></li>`; }).join('')}</ul>` : '<div class="empty">Aucune équipe inscrite pour l’instant.</div>'}</section>`;
+  let col2;
+  if (run) {
+    let mach = '';
+    for (let k = 1; k <= N; k++) { const lv = E.onMachine(c, k);
+      mach += `<div class="dmach${lv ? ' on' : ''}"><div class="row" style="justify-content:space-between"><h3>Machine ${k}</h3>${lv ? `<span class="muted small">${since(lv.live_at)}</span>` : ''}</div>${lv ? `<div class="dvs"><b>${esc(tname(c, lv.a))}</b><i>VS</i><b>${esc(tname(c, lv.b))}</b></div><div class="muted small">${esc(E.phaseLabel(c, lv))} · ${esc(E.gameFor(c, lv))}</div>` : '<div class="muted">Libre</div>'}</div>`; }
+    const nx = E.launchable(c).concat(E.waitingMatches(c)).slice(0, 3);
+    const last = c.matches.filter((m) => m.status === 'done' && !m.bye).sort((a, b) => String(b.played_at).localeCompare(String(a.played_at))).slice(0, 4);
+    col2 = `<section class="panel dcol"><h2>Sur les machines</h2><div class="stack" style="gap:10px">${mach}</div>
+      <h3>À suivre</h3>${nx.length ? `<ul class="dlist">${nx.map((m) => `<li><span>${esc(tname(c, m.a))} <i>vs</i> ${esc(tname(c, m.b))}</span><small>${esc(E.phaseLabel(c, m))}</small></li>`).join('')}</ul>` : '<p class="muted">–</p>'}
+      <h3>Derniers résultats</h3>${last.length ? `<ul class="dlist">${last.map((m) => `<li><span><b>${esc(tname(c, m.winner))}</b> bat ${esc(tname(c, m.loser))}${m.score ? ' · ' + esc(m.score) : ''}</span><small>${esc(E.phaseLabel(c, m))}</small></li>`).join('')}</ul>` : '<p class="muted">Pas encore de résultat.</p>'}</section>`;
+  } else if (c.status === 'termine') {
+    const pd = E.podium(c);
+    col2 = `<section class="panel dcol"><h2>Podium</h2>${c.podium_photo_url ? `<img class="photo" src="${esc(c.podium_photo_url)}" alt="">` : ''}${[0, 1, 2].map((i) => pd[i] ? `<div class="row" style="gap:14px;padding:8px 0"><span class="medal m${i + 1}" style="width:52px;height:52px;font-size:28px">${i + 1}</span><div class="dtitle" style="font-size:clamp(22px,2.4vw,40px)">${esc(tname(c, pd[i]))}</div></div>` : '').join('')}</section>`;
+  } else col2 = `<section class="panel dcol"><h2>Avant le tirage</h2><div class="facts"><div class="fact"><span>Format</span><b>${c.format === 'poules' ? 'Poules + tableau' : 'Élimination directe'}</b></div><div class="fact"><span>Jeu</span><b>${esc(c.game)}</b></div><div class="fact"><span>Finale</span><b>${esc(c.final_game)}</b></div><div class="fact"><span>Machines</span><b>${N}</b></div></div><p class="muted">Inscription au comptoir jusqu’à ${hhmm(c.deadline_time).replace(':', 'h')}.</p></section>`;
+  let col3;
+  if (c.pools && c.phase === 'pools') col3 = poolsHTML(c);
+  else if (c.matches.some((m) => m.ph === 'main')) col3 = `<section class="panel dcol"><h2>Tableau</h2>${bracketHTML(c, 'main')}${c.matches.some((m) => m.ph === 'conso') ? '<h3>Consolante</h3>' + bracketHTML(c, 'conso') : ''}</section>`;
+  else {
+    const best = (g) => records.find((r) => r.game === g);
+    col3 = `<section class="panel"><h3>Record de la semaine</h3>${['Count-Up', 'Big Bull'].map((g) => `<div class="row" style="justify-content:space-between"><span><b>${g}</b> · ${best(g) ? esc(best(g).player_name) : 'à battre'}</span><span class="clock" style="font-size:30px">${best(g)?.score ?? '–'}</span></div>`).join('')}</section>
+      <section class="panel" style="align-items:center"><div class="qrBox" id="qr" style="width:220px"></div><b>Suivez le concours sur votre téléphone</b></section>`;
+  }
+  app.innerHTML = `<div class="disp">${head}<div class="dgrid"><div class="stack">${col1}</div><div class="stack">${col2}</div><div class="stack d3">${col3}</div></div><p class="legal" style="margin:0">Concours réservé aux majeurs. L’abus d’alcool est dangereux pour la santé, à consommer avec modération.</p></div>`;
+  const qr = $('#qr'); if (qr && typeof QRCode !== 'undefined') new QRCode(qr, { text: `${SITE_URL}/?c=${c.id}`, width: 512, height: 512 });
+}
+
+async function load() {
+  const { data } = await sb.from('contests').select('id,status,date').neq('status', 'brouillon').order('date');
+  const list = data || [];
+  const pick = list.find((x) => x.status === 'en_cours') || list.find((x) => x.status === 'ouvert' && x.date >= today()) || list[list.length - 1];
+  if (!pick) { c = null; render(); return; }
+  if (pick.id !== c?.id) subscribe(pick.id);
+  const [full, { data: rec }] = await Promise.all([loadContestFull(pick.id), sb.from('records').select('*').eq('week_start', weekMonday()).order('score', { ascending: false })]);
+  c = full; records = rec || []; render();
+}
+function subscribe(id) {
+  if (channel) sb.removeChannel(channel);
+  channel = sb.channel('suivi-' + id)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `contest_id=eq.${id}` }, soon)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'contests' }, soon)
+    .subscribe();
+}
+function soon() { clearTimeout(timer); timer = setTimeout(load, 400); }
+
+venue = await loadVenue(); settings = venue.settings;
+await load();
+setInterval(() => { page++; render(); }, 10000);   // pages d'équipes et chronos
+setInterval(load, 30000);                          // inscriptions et pointage (non diffusés en temps réel au public)
+</script>
+</body>
+</html>
