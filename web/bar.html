@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mode bar · Fléchettes V and B Lattes</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700;900&family=Nunito+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+</head>
+<body>
+<div class="tv" id="tv" style="position:static;min-height:100vh">
+  <div class="tvHead"><div><img class="logo" data-asset="logo" alt="V and B Montpellier Lattes" onload="this.nextElementSibling.hidden=true" onerror="this.remove()"><div class="eyebrow">V and B Montpellier Lattes</div><h1>Fléchettes</h1><div class="tagline">Concours <b>·</b> gratuit <b>·</b> équipes de 2</div></div><button class="btn ghost" id="fs">Plein écran</button></div>
+  <div id="inner"><div class="empty">Chargement…</div></div>
+  <p class="legal">Concours réservé aux majeurs. L’abus d’alcool est dangereux pour la santé, à consommer avec modération.</p>
+</div>
+<script type="module">
+import './js/assets.js';
+import { sb, loadContestFull } from './js/sb.js';
+import { SITE_URL } from './config.js';
+import { $, esc, fmtDate, hhmm, weekMonday } from './js/util.js';
+import { podium, lives, launchable, waitingMatches } from './js/engine.js';
+import { card, bracketHTML, poolsHTML, tname } from './js/views.js';
+
+const inner = $('#inner'); let current = null, channel = null, timer = null;
+$('#fs').onclick = () => document.documentElement.requestFullscreen?.().catch(() => {});
+try { navigator.wakeLock?.request('screen').catch(() => {}); } catch {}
+
+async function pickContest() {
+  const { data } = await sb.from('contests').select('id,status,date').neq('status', 'brouillon').order('date');
+  const list = data || [];
+  return list.find((c) => c.status === 'en_cours') || list.find((c) => c.status === 'ouvert') || list[list.length - 1] || null;
+}
+async function recordPanel() {
+  const { data } = await sb.from('records').select('*').eq('week_start', weekMonday()).order('score', { ascending: false });
+  const best = (g) => (data || []).find((r) => r.game === g);
+  return `<section class="panel"><h3>Record de la semaine</h3>${['Count-Up', 'Big Bull'].map((g) => `<div class="row" style="justify-content:space-between"><span><b>${g}</b> · ${best(g) ? esc(best(g).player_name) : 'à battre'}</span><span class="clock" style="font-size:30px">${best(g)?.score ?? '–'}</span></div>`).join('')}</section>`;
+}
+async function render() {
+  const p = await pickContest();
+  if (!p) { inner.innerHTML = '<div class="empty">Aucun concours annoncé.</div>'; return; }
+  if (p.id !== current?.id) subscribe(p.id);
+  const c = await loadContestFull(p.id); current = c;
+  const rec = await recordPanel();
+  if (c.status === 'en_cours') {
+    const lv = lives(c), nx = launchable(c).concat(waitingMatches(c));
+    inner.innerHTML = `<div class="tvGrid"><div class="stack"><section class="panel"><h2>Sur les machines</h2>${lv.map((m) => card(c, m)).join('') || '<p class="muted">Prochains matchs dans un instant.</p>'}</section>
+      <section class="panel"><h2>À suivre</h2>${nx.slice(0, 3).map((m) => card(c, m)).join('') || '<p class="muted">–</p>'}</section>${rec}</div>
+      <div class="stack">${c.phase === 'pools' ? poolsHTML(c) : ''}${c.matches.some((m) => m.ph === 'main') ? `<section class="panel"><h2>Tableau</h2>${bracketHTML(c, 'main')}</section>` : ''}${c.matches.some((m) => m.ph === 'conso') ? `<section class="panel"><h3>Consolante</h3>${bracketHTML(c, 'conso')}</section>` : ''}</div></div>`;
+  } else if (c.status === 'termine') {
+    const pd = podium(c);
+    inner.innerHTML = `<div class="tvGrid"><section class="panel"><h2>Vainqueurs du ${esc(fmtDate(c.date))}</h2>${c.podium_photo_url ? `<img class="photo" src="${esc(c.podium_photo_url)}" alt="">` : ''}${[0, 1, 2].map((i) => pd[i] ? `<div class="row" style="gap:14px"><span class="medal m${i + 1}" style="width:48px;height:48px;font-size:26px">${i + 1}</span><span class="fxName" style="font-size:clamp(26px,3.5vw,52px)">${esc(tname(c, pd[i]))}</span></div>` : '').join('')}</section><div class="stack">${rec}</div></div>`;
+  } else {
+    const left = Math.max(0, c.max_teams - c.teams.filter((t) => t.status === 'confirmee').length);
+    inner.innerHTML = `<div class="tvGrid"><section class="panel"><h2>Prochain concours</h2><div class="fxName" style="font-size:clamp(32px,5vw,70px)">${esc(fmtDate(c.date))} · ${hhmm(c.start_time).replace(':', 'h')}</div><p style="font-size:22px">Gratuit · équipes de 2 · débutants bienvenus</p><p class="muted" style="font-size:20px">${left} places restantes</p></section>
+      <div class="stack"><section class="panel" style="align-items:center"><div class="qrBox" id="qr" style="width:260px"></div><b style="font-size:20px">Scannez pour vous inscrire</b></section>${rec}</div></div>`;
+    const draw = () => { if (typeof QRCode === 'undefined') return setTimeout(draw, 300); new QRCode($('#qr'), { text: `${SITE_URL}/?c=${c.id}`, width: 512, height: 512 }); };
+    draw();
+  }
+}
+function subscribe(id) {
+  if (channel) sb.removeChannel(channel);
+  channel = sb.channel('bar-' + id)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `contest_id=eq.${id}` }, soon)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'contests' }, soon)
+    .subscribe();
+}
+function soon() { clearTimeout(timer); timer = setTimeout(render, 500); }
+setInterval(render, 120000); // filet de sécurité si le Wi-Fi décroche
+render();
+</script>
+</body>
+</html>

@@ -1,113 +1,121 @@
 # Concours de fléchettes – V and B Montpellier Lattes
 
-Application web installable (PWA) pour les concours de fléchettes du bar. Elle couvre le MVP du cahier des charges :
+Application web installable (PWA) pour les concours de fléchettes du bar, hébergée sur **GitHub Pages** avec une base **Supabase**.
+**Aucun e-mail, aucun mot de passe, aucun SQL à exécuter** : tout se déploie depuis GitHub.
 
-- **Concours** : création, duplication à J+7, statuts, contrôle des horaires d'ouverture et des fermetures exceptionnelles (bloqué par la base), alerte en cas de conflit avec une autre animation, estimation de l'heure de fin sur les deux machines.
-- **Inscriptions** : page publique par lien ou QR code, formulaire en moins d'une minute, sans compte. Inscription sur place par le staff, places restantes, liste d'attente automatique, désinscription en un clic, joueurs solo associés par niveau.
-- **Jour J** : pointage, tirage (élimination directe + consolante, ou poules puis tableau), file d'attente sur les deux machines DARTSLIVE 2 (lancement automatique du match suivant sur la machine libérée), saisie du gagnant en deux touches, chrono jusqu'à la fermeture, mode bar en temps réel.
-- **Résultats** : podium, prix de consolation (vainqueur de la consolante ou tirage au sort), photo du podium avec accord, page publique partageable.
-- **Saison** : classement des équipes et des joueurs calculé depuis les résultats, record de la semaine (Count-Up, Big Bull).
-- **Notifications** : confirmation immédiate avec fichier agenda, rappels la veille et le jour même, « place libérée », annonce du concours suivant aux anciens participants qui l'ont accepté.
-- **Communication** : légendes Instagram prêtes à copier avec la mention sanitaire, QR code téléchargeable.
+- **Concours** : création, duplication à J+7, contrôle des horaires d'ouverture et des fermetures (bloqué par la base), alerte de conflit, estimation de l'heure de fin sur les deux machines.
+- **Inscriptions** : page joueurs par lien ou QR code, en moins d'une minute, avec le **numéro de téléphone** du capitaine (une inscription par numéro et par concours). Inscription sur place par le staff, liste d'attente automatique, annulation, joueurs solo associés par niveau.
+- **Notifications sur le téléphone** : « une place s'est libérée » pour les équipes en liste d'attente, « à vous de jouer sur la machine 2 » quand un match est lancé.
+- **Jour J** : pointage, tirage (élimination directe + consolante, ou poules puis tableau), deux machines DARTSLIVE 2, match suivant lancé automatiquement, **résultats déclarés par les joueurs** depuis leur téléphone ou saisis par le staff en deux touches.
+- **Résultats, saison, record de la semaine, légendes Instagram, QR code**, onglet **Contact** synchronisé avec vandb.fr, écran TV.
 
-Pas encore inclus (versions 2 et 3 du cahier) : espace joueur avec historique personnel, génération des visuels 1080 × 1920, SMS/WhatsApp, rating DARTSLIVE dans le tirage, tableaux par niveau.
+## Les trois pages
+| Page | Fichier | Pour qui |
+|---|---|---|
+| Joueurs | `index.html` (+ `gerer.html`) | Téléphones : inscription, **Mon match** (code d'équipe, résultat), **Mes scores**, tableau, résultats, saison, contact |
+| Test téléphone | `test.html` | Vérifier qu'un téléphone gère tout avant un concours |
+| Staff | `staff.html` (écran comptoir : `comptoir.html`) | Ouvert par le QR code ou le lien staff : jour J, équipes, concours, réglages |
+| TV | `suivi.html` (ancien mode : `bar.html`) | Télévision ou projecteur : tableau du tournoi en miroir (moitié gauche, moitié droite, finale au centre), en direct, adapté au nombre d'équipes, sans rien toucher |
+
+## Mise en ligne (une seule fois, environ 10 minutes)
+Le dépôt GitHub et GitHub Pages sont déjà en place. Il reste :
+
+1. **Source de GitHub Pages** : dans le dépôt, **Settings › Pages › Build and deployment › Source** = **GitHub Actions** (et non « Deploy from a branch »).
+2. **Deux secrets GitHub** : **Settings › Secrets and variables › Actions › New repository secret** :
+   - `SUPABASE_ACCESS_TOKEN` : sur supabase.com, **Account › Access Tokens › Generate new token**, copiez le jeton.
+   - `STAFF_KEY` : une longue suite de caractères au hasard (au moins 12, par exemple `bar-lattes-7Hq2xP9mZk4w`). Personne n'aura à la taper : elle est contenue dans le QR code et le lien staff.
+3. **Lancer le déploiement** : onglet **Actions › Déployer › Run workflow** (il se relance aussi tout seul à chaque modification du dépôt). Il :
+   - crée ou met à jour les tables, les règles d'accès et les tâches planifiées de la base (fichiers de `supabase/migrations`, chacun appliqué une seule fois) ;
+   - active les sessions anonymes pour les appareils du staff et désactive la connexion par e-mail ;
+   - déploie les fonctions `report`, `push` et `sync-store` ;
+   - écrit la clé publique du projet dans `web/config.js` et publie le site.
+4. **Lien staff** : `https://VOTRE-COMPTE.github.io/VOTRE-DEPOT/staff.html#acces=VOTRE_STAFF_KEY`. Ouvrez-le une fois ; ensuite le QR code staff s'affiche dans **Réglages › Accès staff**.
+
+## Accès du staff : QR code fixe ou lien, rien à saisir
+- **Tablette ou téléphone** : scanner le **QR code staff** avec l'appareil photo. L'espace staff s'ouvre directement.
+- **Ordinateur** : ouvrir le **lien staff** (à mettre en favori).
+- Le QR code et le lien sont fixes. Ils sont affichés dans **Réglages › Accès staff**, avec **Télécharger le QR code** et **Copier le lien**.
+- Une fois ouvert, l'appareil reste connecté, même sans le lien.
+- Gardez le QR code hors de la vue des clients : il donne accès à tout l'espace staff.
+- Pour le changer (fuite, ancien employé), modifiez le secret `STAFF_KEY` dans GitHub et relancez **Déployer**. Les appareils déjà ouverts restent connectés.
+
+## Les joueurs
+1. **Inscription** sur le téléphone : prénoms, niveaux, numéro de téléphone du capitaine. Le numéro n'est jamais affiché ; seul le staff le voit.
+   - **Le numéro identifie l'équipe d'un concours à l'autre.** Le téléphone retient le numéro, les prénoms et le nom d'équipe : le formulaire est déjà rempli la fois suivante. Sans nom saisi, la base reprend le dernier nom utilisé avec ce numéro.
+   - Un nom d'équipe appartient au numéro qui l'a utilisé en premier : un autre numéro ne peut pas le prendre. Les points s'additionnent ainsi dans le classement de la saison.
+   - L'onglet **Mes scores** montre tous les concours joués avec ce numéro : place, points, chaque match (adversaire, victoire ou défaite, score) et les totaux de la saison.
+2. **Équipe confirmée** : le **code d'équipe à 4 chiffres** s'affiche sur le téléphone et y reste enregistré (jamais envoyé ailleurs).
+   **Liste d'attente** : pas de code ; le téléphone indique qu'il n'y a plus de place. Dès qu'une place se libère, l'équipe passe inscrite et le code apparaît dans **Mon match**.
+3. **Notifications** : le bouton **Activer les notifications** (après l'inscription, dans **Mon match** ou sur la page de gestion) abonne le téléphone. Il reçoit alors :
+   - « Une place s'est libérée ! » quand son équipe sort de la liste d'attente ;
+   - « À vous de jouer : machine 2 » quand son match est lancé.
+   Android (Chrome, Firefox, Samsung Internet) : directement dans le navigateur. **iPhone** (iOS 16.4 ou plus) : il faut d'abord **Partager › Sur l'écran d'accueil**, puis ouvrir l'application depuis l'icône ; la page l'explique au joueur et garde son inscription dans l'icône.
+4. **Pendant le concours**, onglet **Mon match** : la machine et l'adversaire, puis **Nous avons gagné / Nous avons perdu**. Le tableau, l'écran TV et le comptoir se mettent à jour aussitôt ; le match suivant est lancé sur la machine libérée. Le staff voit « déclaré par les joueurs » et peut annuler une erreur.
+
+Les notifications utilisent le standard Web Push : ni e-mail, ni SMS, ni application à télécharger, aucun compte chez un prestataire. Les clés d'envoi sont créées automatiquement par la fonction `push` au premier usage.
+
+## Page test téléphone
+`test.html` sert à vérifier qu'un téléphone gère tout avant un concours. Son QR code est dans **Staff › Réglages**.
+- **Vérifications automatiques** : configuration du site, connexion à la base, concours visibles, mises à jour en direct, fonctions du serveur, mémoire du téléphone, installation, notifications.
+- **Notification de test** : un bouton envoie une vraie notification à ce téléphone seulement.
+- **Parcours complet** à cocher, sur le concours de test : inscription, notifications, place libérée (avec 2 téléphones), code dans Mon match, « À vous de jouer », déclaration du résultat, Mes scores, nom d'équipe gardé.
+- **Remettre ce téléphone à zéro** pour refaire le parcours comme un nouveau joueur.
+
+## Concours de test
+**Staff › Réglages › Concours de test › Créer ou remettre à zéro** crée un concours « (test) » au prochain jour d'ouverture.
+- 12 équipes d'exemple sur **13 places**, dont 10 présentes : le premier téléphone testeur est inscrit, le suivant passe en liste d'attente.
+- Inscriptions ouvertes jusqu'à la fermeture du bar. Codes d'équipe : 1001 (Les Flèches) à 1012 (180 Club).
+- Il ne compte jamais dans le classement de la saison. **Effacer le concours de test** le supprime, avec les équipes des testeurs.
+
+## Contact synchronisé avec vandb.fr
+L'onglet **Contact** (horaires, fermetures exceptionnelles, téléphone, adresse) est repris de https://www.vandb.fr/nos-magasins/v-and-b-montpellier-lattes chaque matin par une tâche planifiée de la base, ou à la demande (**Réglages › Mettre à jour maintenant**). Si la page change de forme, rien n'est modifié. Les horaires servent aussi aux contrôles des concours.
 
 ## Architecture
-
-| Brique | Choix | Pourquoi |
-|---|---|---|
-| Pages | HTML + JavaScript sans compilation (`web/`) | Hébergement statique, rien à installer |
-| Base, comptes staff, photos, temps réel | [Supabase](https://supabase.com), région **UE (Paris, eu-west-3)** | Connexion staff par identifiant et mot de passe (ou lien par e-mail), règles d'accès en base, abonnement aux changements |
-| E-mails | [Brevo](https://www.brevo.com) (France) | Plan gratuit de 300 e-mails/jour, serveurs dans l'UE |
-| Rappels | `pg_cron` dans Supabase | Un appel par jour à la fonction `reminders` |
-
-Les données personnelles (prénom, contact) ne sont lisibles que par le staff. Le public passe par des vues et des fonctions qui n'exposent ni e-mail ni téléphone.
-
 ```
+.github/workflows/deploy.yml   déploiement complet à chaque push (base, fonctions, site)
+scripts/deploy-supabase.mjs    applique les migrations par l'API Supabase, sans SQL manuel
 supabase/
-  migrations/20261008000001_schema.sql   tables, règles d'accès, fonctions d'inscription
-  functions/notify      confirmation + « place libérée »
-  functions/reminders   rappels veille / jour J (pg_cron)
-  functions/announce    annonce aux anciens participants (staff)
-  cron.sql              planification des rappels
-web/
-  index.html   page publique (concours, inscription, tableau, résultats, saison)
-  gerer.html   lien reçu par e-mail : annuler, supprimer ses données, se désabonner
-  staff.html   espace staff (connexion par lien magique)
-  bar.html     mode bar plein écran pour la télévision
-  comptoir.html  écran comptoir du staff : inscription sur place + suivi des scores
-  suivi.html     écran de suivi pour une télé : équipes et matchs en direct, affichage seul
+  migrations/                  tables, règles d'accès, fonctions SQL, déclencheurs, tâches planifiées
+  functions/report             résultat déclaré par les joueurs (même moteur que le staff)
+  functions/push               notifications Web Push (place libérée, match lancé)
+  functions/sync-store         synchro de la fiche vandb.fr
+  functions/_shared            moteur de tournoi, chiffrement Web Push, lecture de la fiche magasin
+web/                           le site publié (aucune donnée stockée sur GitHub)
 ```
+- Les données personnelles (prénoms, téléphone) ne sont lisibles que par les appareils du staff. Le public passe par des vues et des fonctions qui ne les exposent pas.
+- Les notifications partent de la base : quand une équipe sort de la liste d'attente ou qu'un match passe « en cours », un déclencheur prépare le message et appelle la fonction `push` ; une tâche planifiée renvoie toutes les 5 minutes ce qui serait resté en attente.
+- Les fichiers volumineux (logo, photos, vidéos) sont dans Supabase Storage (bucket `assets`), pas dans le dépôt : **Réglages › Fichiers du site**. Le logo est `Flechettes/Images/logo.png`.
+- Le dépôt peut être public : il ne contient aucun secret (la clé « anon » est publique par conception).
 
-## Mise en route (environ 45 minutes)
+## Au bar
+- **Mode d'emploi** : onglet de l'espace staff qui explique simplement la création d'un concours, les inscriptions, le soir du concours, l'écran TV et les questions fréquentes.
+- **Aucun bouton vers l'espace staff** côté joueurs. Sur l'écran comptoir (tablette utilisée par les clients pour s'inscrire), le staff en sort par un appui de 3 secondes sur l'heure.
+- **Télévision** : `suivi.html` en plein écran, mise à jour automatique.
+- **Écran comptoir** (tablette près des machines) : `comptoir.html` sur un appareil autorisé. Inscription sur place, pointage, puis les deux machines avec saisie du gagnant.
+- **Instagram** : lien du site en bio, sticker lien en story. QR code dans l'onglet **Communication**.
 
-### 1. Supabase
-1. Créez un projet sur supabase.com en choisissant la région **West EU (Paris)**.
-2. Dans **SQL Editor**, collez et exécutez `supabase/migrations/20261008000001_schema.sql`.
-3. Créez le compte staff partagé (identifiant **staff**) :
-   - **Authentication > Users > Add user > Create new user** : e-mail `staff@flechettes-lattes.fr`, mot de passe `Triple20-Lattes`, cochez **Auto Confirm User**.
-   - Puis, dans **SQL Editor** :
-     ```sql
-     insert into staff (email, name) values ('staff@flechettes-lattes.fr', 'Staff du bar');
-     ```
-   - Au bar, on se connecte avec l'identifiant `staff` et le mot de passe `Triple20-Lattes`.
-   - Vous pouvez créer d'autres identifiants de la même façon (`lea@flechettes-lattes.fr` → identifiant `lea`). Si vous changez le domaine, mettez à jour `STAFF_LOGIN_DOMAIN` dans `web/config.js`.
-   - Changez le mot de passe quand une personne quitte l'équipe (**Authentication > Users**, menu du compte).
-   - Dans **Authentication > Providers > Email**, désactivez **Allow new users to sign up** : seuls les comptes que vous créez peuvent se connecter.
-4. **Authentication > URL Configuration** : mettez l'adresse du site dans *Site URL* et ajoutez `https://votre-site/staff.html` aux *Redirect URLs*.
-
-### 2. E-mails (Brevo)
-1. Créez un compte Brevo, validez l'adresse d'expédition (ex. `concours@votre-domaine.fr`) et créez une clé API.
-2. Installez la [CLI Supabase](https://supabase.com/docs/guides/cli), puis :
-   ```bash
-   supabase link --project-ref VOTRE_REF
-   supabase secrets set BREVO_API_KEY=... MAIL_FROM=concours@votre-domaine.fr SITE_URL=https://votre-site CRON_SECRET=$(openssl rand -hex 24)
-   supabase functions deploy notify
-   supabase functions deploy announce
-   supabase functions deploy reminders --no-verify-jwt
-   ```
-3. Dans **SQL Editor**, exécutez `supabase/cron.sql` après y avoir remplacé `<PROJECT_REF>` et `<CRON_SECRET>`.
-
-Les e-mails de connexion du staff partent par Supabase. Pour plus de fiabilité, branchez aussi le SMTP de Brevo dans **Authentication > SMTP Settings**.
-
-### 3. Site
-1. Renseignez `web/config.js` : URL du projet et clé `anon` (Settings > API), adresse publique du site.
-2. Déposez le dossier `web/` sur un hébergement statique en HTTPS (OVHcloud, Scaleway, o2switch, Netlify…). Le site ne stocke aucune donnée : tout est dans Supabase.
-3. Ouvrez `https://votre-site/staff.html`, connectez-vous avec l'identifiant `staff` et créez le premier concours.
-
-### 4. Logo (facultatif)
-Déposez le logo officiel du magasin sous le nom `web/logo.png`. Il s'affiche en tête de la page publique, de l'espace staff et du mode bar. Sans ce fichier, les pages s'affichent sans logo. Faites valider son usage par le franchiseur, comme le prévoit le cahier des charges.
-
-### 5. Au bar
-- **Télévision** : ouvrez `bar.html` en plein écran. Elle se met à jour toute seule.
-- **Écran de suivi** (2e écran du bar) : ouvrez `suivi.html` en plein écran, sans compte. À gauche, les équipes et leur statut (présente, sur la machine 1 ou 2, prochain match, éliminée, podium) ; au centre, les deux machines avec le temps écoulé, la suite et les derniers résultats ; à droite, les poules ou le tableau. Il se met à jour tout seul.
-- **Écran comptoir** (écran tactile ou tablette près des machines) : ouvrez `comptoir.html` et connectez-vous avec un compte staff. À gauche, l'inscription sur place (équipe pointée d'office) ; à droite, le pointage puis, après le tirage, les deux machines avec la saisie du gagnant en deux touches. L'écran suit automatiquement le concours en cours et ne se met pas en veille.
-- **Tablette du staff** : ouvrez `staff.html` puis « Ajouter à l'écran d'accueil ».
-- **Instagram** : lien du site dans la bio, sticker lien dans les stories. Le QR code se télécharge dans l'onglet Communication.
-
-## Identité visuelle
-La palette et la typographie reprennent l'esprit des affiches du bar : fond brun-noir, jaune, bleu-vert, orange et crème, titres en capitales grasses (Open Sans 800), illustration de cible à plat. Le thème est volontairement sombre, lisible sur la télévision du bar comme sur téléphone.
-
-## Jeux DARTSLIVE 2
-Les règles affichées aux joueurs sont résumées d'après le guide DARTSLIVE 2 (v3.0) : 301/501/701, Standard Cricket, Select-a-Cricket, Medley 3 manches, jeux de fête pour la consolante, Count-Up et Big Bull pour le record. Deux jeux sont volontairement écartés :
-- **Yum Yum**, qui attribue des « points boisson » (contraire à la règle de ne pas lier la victoire à une consommation) ;
-- **Cut Throat**, qui demande au moins trois camps alors que les matchs opposent deux équipes.
-
-## Règles métier codées
-- **Horaires** : un concours ne peut pas être créé un dimanche, un jour de fermeture ou hors des heures d'ouverture. La base le refuse.
-- **Fin estimée** : nombre de matchs × (durée moyenne du jeu + changement d'équipe). Les durées se règlent dans l'onglet Réglages. Le tirage est bloqué si la fin estimée dépasse la fermeture, et l'application indique le nombre maximal d'équipes pour le créneau.
-- **Happy hour** (17h–19h) : un concours qui la chevauche déclenche une alerte, comme les autres animations saisies.
-- **Deux machines** (nombre réglable dans Réglages) : un match par machine, jamais la même équipe sur les deux à la fois. Après chaque victoire, le match suivant jouable est lancé sur la machine libérée. L'estimation de fin répartit les matchs sur les machines, la finale se jouant seule à la fin.
-- **Consolante** : les perdants du premier tour du tableau principal, sur un jeu de fête.
-- **Barème de saison** (modifiable) : participation 1, victoire 1, 3e 3, 2e 5, 1re 8, record de la semaine 2. En cas d'égalité, le nombre de victoires départage.
+## Règles métier
+- **Horaires** : pas de concours le dimanche, un jour de fermeture ou hors des heures d'ouverture (refusé par la base). Happy hour 17h–19h signalée.
+- **Fin estimée** : matchs × (durée du jeu + changement d'équipe), répartis sur les machines ; tirage bloqué si la fin dépasse la fermeture.
+- **Deux machines** : jamais la même équipe sur les deux à la fois ; match suivant lancé sur la machine libérée.
+- **Consolante** : perdants du premier tour, sur un jeu de fête.
+- **Barème de saison** (modifiable) : participation 1, victoire 1, 3e 3, 2e 5, 1re 8, record de la semaine 2.
+- Jeux écartés : **Yum Yum** (points boisson) et **Cut Throat** (trois camps minimum).
 
 ## RGPD et alcool
-- Données collectées : prénom ou pseudo, niveau, un moyen de contact. Le consentement aux rappels et le consentement aux annonces sont deux cases distinctes.
-- Le lien reçu par e-mail permet d'annuler, de supprimer ses données (effacement immédiat) et de se désabonner des annonces.
-- La confirmation de majorité est obligatoire. La mention sanitaire figure sur chaque page, chaque e-mail et chaque légende. Les points ne sont jamais liés à une consommation.
-- Une photo du podium n'est publiée qu'après avoir coché l'accord des personnes.
+- Données : prénoms ou pseudos, niveaux, numéro de téléphone du capitaine. Aucun e-mail.
+- La page de gestion (lien affiché après l'inscription) permet d'annuler et de supprimer ses données (effacement immédiat, abonnements aux notifications compris).
+- Majorité obligatoire. Mention sanitaire sur chaque page et chaque légende. Les points ne sont jamais liés à une consommation. Photo du podium publiée seulement avec l'accord des personnes.
 
 ## Ce qui a été testé
-- Le schéma SQL a été appliqué sur PostgreSQL 16. Testés en rôle public et en rôle staff : contrôle des horaires, inscriptions, liste d'attente, désinscription avec promotion, effacement, association des solos, refus des actions staff pour le public, classements de saison.
-- Le moteur de tournoi a été simulé de bout en bout de 2 à 32 équipes dans les deux formats, avec des annulations de résultats aléatoires. Tous les concours se terminent avec un podium complet, et le nombre de matchs correspond à l'estimation.
-- Les pages et les fonctions d'e-mail n'ont pas encore tourné sur un vrai projet Supabase et un vrai compte Brevo. Faites un concours d'essai avant la première vraie date.
+- Le schéma a été appliqué sur PostgreSQL 16. Testés :
+  - accès staff : lien fixe accepté, lien faux refusé, actions staff refusées au public ;
+  - inscription par téléphone : numéro obligatoire, normalisé, une équipe par numéro ;
+  - nom d'équipe repris avec le même numéro, refusé à un autre numéro, suivi « Mes scores » ;
+  - liste d'attente : promotion, message « place libérée » et appel de la fonction `push` ;
+  - message « machine 2 » au lancement d'un match ;
+  - concours de test : création et effacement ;
+  - refus des actions staff pour le public.
+- Le chiffrement Web Push a été vérifié en déchiffrant de façon indépendante des messages produits sous Node et sous Deno. Les fonctions passent la vérification de types Deno.
+- Les pages (staff, joueurs, Mes scores, page test) ont été parcourues dans Chromium avec une base simulée.
+- Pas encore vérifié sur le vrai projet Supabase. Faites un concours de test et une notification d'essai sur un Android et un iPhone avant la première vraie date.

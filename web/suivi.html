@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Suivi en direct · Fléchettes V and B Lattes</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1d1d1b">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700;900&family=Nunito+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+</head>
+<body>
+<!-- Écran de suivi pour la télévision du bar : affichage seul, mis à jour en temps réel, sans compte. -->
+<div id="app"><div class="disp"><div class="empty">Chargement…</div></div></div>
+<script type="module">
+const PAGE_CSS = `
+body{margin:0;border-top:0}
+@media (min-width:1001px){body{overflow:hidden}}
+.disp.tv{gap:10px;padding:12px 20px}
+.tvhead{display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:8px solid #1d1d1b;margin:-12px -20px 0;padding:10px 20px 8px;border-bottom:3px solid var(--yellow)}
+.tvbrand{display:flex;align-items:center;gap:14px}.tvbrand .logo{height:clamp(40px,4.6vw,78px);width:auto}
+.tvtitle{font:900 clamp(28px,3vw,54px) var(--display);line-height:1}
+.livebadge{align-self:center;background:var(--orange);color:#fff;font:800 clamp(12px,1vw,18px) var(--body);letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:30px}
+.tvmain{flex:1;min-height:0;display:flex;flex-direction:column}
+.tvviewhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.tvviewhead h2{font-size:clamp(18px,1.6vw,30px)}
+.tvdots{display:flex;gap:8px}.tvdots span{font:800 12px var(--body);letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border-radius:20px;background:#f3f3f0;color:var(--muted)}.tvdots span.on{background:#1d1d1b;color:#fff}
+.tvstrip{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;flex:none}
+.tvm,.tvlist{border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:#fff;font-size:clamp(13px,1vw,18px)}
+.tvm.on{border:2px solid var(--orange)}
+.tvmh{display:flex;justify-content:space-between;align-items:baseline}.tvmh b{font:900 clamp(15px,1.3vw,24px) var(--display)}.tvmh span{color:var(--muted);font-size:.85em}
+.tvvs{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin:4px 0}.tvvs b{font-size:1.15em}.tvvs i{color:var(--orange);font-weight:800}
+.tvm small,.tvqr small{color:var(--muted)}
+.tvlist h4{margin:0 0 4px;font:800 11px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.tvlist div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tvqr{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:8px 12px}.tvqr .qrBox{width:92px;padding:4px;border:0}
+.tvpod{grid-column:1/-2;display:flex;gap:12px}.pd{flex:1;display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px 14px}.pd b{font:900 clamp(16px,1.5vw,28px) var(--display)}.pd small{color:var(--muted)}.pd.pd1{background:var(--yellow);border-color:var(--yellow)}
+.tvpools{flex:1;min-height:0;display:grid;grid-template-columns:repeat(var(--n),1fr);gap:14px;overflow:hidden}
+.tvpool{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;min-height:0;--fs:clamp(12px,.9vw,17px)}
+.tvpool .std{font-size:clamp(13px,1vw,19px)}.tvpool .pms{display:grid;gap:12px 8px;grid-template-columns:1fr 1fr;padding-top:8px}
+`;
+import { sb, loadVenue, loadContestFull } from './js/sb.js';
+import { SITE_URL, ASSETS_URL, LOGO_PATH } from './config.js';
+import { $, esc, fmtDate, hhmm, hm, fmtHM, nowMin, today, weekMonday, hoursOf, contestStatus } from './js/util.js';
+import * as E from './js/engine.js';
+import { poolsHTML, tname } from './js/views.js';
+import { mirrorBracket, matchCard, TV_CSS } from './js/tvbracket.js';
+document.head.insertAdjacentHTML('beforeend', `<style>${TV_CSS}${PAGE_CSS}</style>`);
+
+const app = $('#app');
+let view = 0, views = [];
+let venue, settings, c = null, records = [], page = 0, channel = null, timer = null;
+try { navigator.wakeLock?.request('screen').catch(() => {}); } catch {}
+
+function teamState(t) {
+  if (t.status === 'attente') return { k: 'wait', l: 'Liste d’attente' };
+  if (c.status === 'ouvert') return t.present ? { k: 'ok', l: 'Présente' } : { k: 'idle', l: 'Attendue' };
+  if (!t.present) return { k: 'idle', l: 'Absente' };
+  if (c.status === 'termine') { const p = E.podium(c).indexOf(t.id); return p >= 0 ? { k: 'medal', l: ['1re place', '2e place', '3e place'][p], p } : { k: 'idle', l: 'Terminé' }; }
+  const lv = E.lives(c).find((m) => m.a === t.id || m.b === t.id); if (lv) return { k: 'live', l: `Machine ${lv.machine || 1}` };
+  if (E.launchable(c).slice(0, E.machines(settings)).some((m) => m.a === t.id || m.b === t.id)) return { k: 'next', l: 'Prochain match' };
+  if (c.matches.some((m) => m.status !== 'done' && (m.a === t.id || m.b === t.id))) return { k: 'ok', l: 'En lice' };
+  if (c.phase === 'pools') {
+    if (!E.poolsDone(c)) return { k: 'ok', l: 'Poule jouée' };
+    const q = c.pools.some((p, gi) => E.poolTable(c, gi).slice(0, c.pools.length === 1 ? Math.min(4, p.ids.length) : 2).some((r) => r.id === t.id));
+    return q ? { k: 'ok', l: 'Qualifiée' } : { k: 'out', l: 'Éliminée' };
+  }
+  return { k: 'out', l: 'Éliminée' };
+}
+const since = (iso) => { if (!iso) return ''; const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000)); return m < 1 ? 'à l’instant' : `depuis ${m} min`; };
+
+function header(c, title) {
+  const conf = c.teams.filter((t) => t.status === 'confirmee'), pres = conf.filter((t) => t.present).length, run = c.status === 'en_cours';
+  const played = c.matches.filter((m) => m.status === 'done' && !m.bye).length, total = c.matches.filter((m) => !(m.status === 'done' && m.bye)).length;
+  const h = hoursOf(venue, c.date), end = run ? (c.date === today() ? Math.max(nowMin(), hm(c.start_time)) : hm(c.start_time)) + E.remainingMin(c, settings) : null;
+  return `<div class="tvhead"><div class="tvbrand"><img class="logo" data-asset="logo" alt="" onerror="this.remove()"><div><div class="tvtitle">Fléchettes</div><div class="eyebrow">${esc(title)} · ${esc(fmtDate(c.date))} · ${hhmm(c.start_time).replace(':', 'h')}</div></div></div>
+    <div class="kstats">${run || c.status === 'termine' ? `<div><b class="num">${pres}</b><span>équipes</span></div><div><b class="num">${played}/${total}</b><span>matchs joués</span></div>${run ? `<div><b class="num"${h && end > h.close ? ' style="color:var(--orange)"' : ''}>${fmtHM(end)}</b><span>fin estimée</span></div>` : ''}`
+      : `<div><b class="num">${conf.length}/${c.max_teams}</b><span>équipes</span></div><div><b class="num">${pres}</b><span>présentes</span></div><div><b class="num">${Math.max(0, c.max_teams - conf.length)}</b><span>places libres</span></div>`}
+    <div><b class="num">${fmtHM(nowMin())}</b><span>heure</span></div>${run ? '<div class="livebadge">● En direct</div>' : ''}</div></div>`;
+}
+
+/* Avant le tirage : liste des équipes, infos du concours, record et QR code */
+function preDraw() {
+  const teams = c.teams.filter((t) => t.status !== 'annulee'), N = E.machines(settings);
+  const per = 12, pages = Math.max(1, Math.ceil(teams.length / per)), pg = page % pages;
+  const col1 = `<section class="panel dcol"><div class="row" style="justify-content:space-between"><h2>Équipes</h2>${pages > 1 ? `<span class="muted num">${pg + 1}/${pages}</span>` : ''}</div>
+    ${teams.length ? `<ul class="dteams">${teams.slice(pg * per, pg * per + per).map((t, i) => { const s = teamState(t); return `<li><span class="n num">${pg * per + i + 1}</span><span class="who"><b>${esc(t.team_name)}</b><small>${esc(t.captain_name)}${t.mate_name ? ' &amp; ' + esc(t.mate_name) : ' · solo'}</small></span><span class="dst ${s.k}">${s.l}</span></li>`; }).join('')}</ul>` : '<div class="empty">Aucune équipe inscrite pour l’instant.</div>'}</section>`;
+  const col2 = `<section class="panel dcol"><h2>Avant le tirage</h2><div class="facts"><div class="fact"><span>Format</span><b>${c.format === 'poules' ? 'Poules + tableau' : 'Élimination directe'}</b></div><div class="fact"><span>Jeu</span><b>${esc(c.game)}</b></div><div class="fact"><span>Finale</span><b>${esc(c.final_game)}</b></div><div class="fact"><span>Machines</span><b>${N}</b></div></div><p class="muted">Inscription sur votre téléphone ou au comptoir jusqu’à ${hhmm(c.deadline_time).replace(':', 'h')}. Le tableau s’affichera ici au tirage au sort.</p></section>`;
+  const best = (g) => records.find((r) => r.game === g);
+  const col3 = `<section class="panel"><h3>Record de la semaine</h3>${['Count-Up', 'Big Bull'].map((g) => `<div class="row" style="justify-content:space-between"><span><b>${g}</b> · ${best(g) ? esc(best(g).player_name) : 'à battre'}</span><span class="clock" style="font-size:30px">${best(g)?.score ?? '–'}</span></div>`).join('')}</section>
+    <section class="panel" style="align-items:center"><div class="qrBox" id="qr" style="width:220px"></div><b>Inscrivez-vous sur votre téléphone</b></section>`;
+  return `<div class="dgrid"><div class="stack">${col1}</div><div class="stack">${col2}</div><div class="stack d3">${col3}</div></div>`;
+}
+
+/* Phase de poules : classement et matchs de chaque poule */
+function poolsView() {
+  const q = c.pools.length === 1 ? Math.min(4, c.pools[0].ids.length) : 2;
+  return `<div class="tvpools" style="--n:${Math.min(4, c.pools.length)}">${c.pools.map((p, gi) => {
+    const ms = c.matches.filter((m) => m.ph === 'pool' && m.grp === gi).sort((a, b) => a.r - b.r || a.slot - b.slot);
+    return `<section class="tvpool"><h3>Poule ${esc(p.name)}</h3><table class="std"><thead><tr><th>#</th><th class="l">Équipe</th><th>J</th><th>V</th></tr></thead><tbody>${E.poolTable(c, gi).map((r, i) => `<tr class="${i < q ? 'q' : ''}"><td class="rk">${i + 1}</td><td class="l">${esc(tname(c, r.id))}</td><td>${r.J}</td><td class="pts">${r.V}</td></tr>`).join('')}</tbody></table>
+      <div class="pms">${ms.map((m) => matchCard(c, m)).join('')}</div></section>`; }).join('')}</div>`;
+}
+
+/* Bandeau du bas : machines, à suivre, derniers résultats (ou podium à la fin), QR code */
+function strip() {
+  if (c.status === 'termine') {
+    const pd = E.podium(c), cw = E.consoWinner(c);
+    return `<div class="tvstrip"><div class="tvpod">${[0, 1, 2].map((i) => pd[i] ? `<div class="pd pd${i + 1}"><span class="medal m${i + 1}">${i + 1}</span><b>${esc(tname(c, pd[i]))}</b><small>${esc(c.prizes?.podium?.[i] || '')}</small></div>` : '').join('')}${cw ? `<div class="pd"><span class="medal" style="background:var(--teal);color:#fff">C</span><b>${esc(tname(c, cw))}</b><small>Consolante</small></div>` : ''}</div><div class="tvqr"><div class="qrBox" id="qr"></div><small>Résultats sur votre téléphone</small></div></div>`;
+  }
+  const N = E.machines(settings);
+  let mach = '';
+  for (let k = 1; k <= N; k++) { const lv = E.onMachine(c, k);
+    mach += `<div class="tvm${lv ? ' on' : ''}"><div class="tvmh"><b>Machine ${k}</b><span>${lv ? since(lv.live_at) : 'libre'}</span></div>${lv ? `<div class="tvvs"><b>${esc(tname(c, lv.a))}</b><i>vs</i><b>${esc(tname(c, lv.b))}</b></div><small>${esc(E.phaseLabel(c, lv))} · ${esc(E.gameFor(c, lv))}</small>` : '<small>En attente du prochain match</small>'}</div>`; }
+  const nx = E.launchable(c).concat(E.waitingMatches(c)).slice(0, 3);
+  const last = c.matches.filter((m) => m.status === 'done' && !m.bye).sort((a, b) => String(b.played_at).localeCompare(String(a.played_at))).slice(0, 3);
+  return `<div class="tvstrip">${mach}
+    <div class="tvlist"><h4>À suivre</h4>${nx.length ? nx.map((m) => `<div><b>${esc(tname(c, m.a))}</b> <i>vs</i> <b>${esc(tname(c, m.b))}</b></div>`).join('') : '<div class="muted">–</div>'}</div>
+    <div class="tvlist"><h4>Derniers résultats</h4>${last.length ? last.map((m) => `<div><b>${esc(tname(c, m.winner))}</b> bat ${esc(tname(c, m.loser))}${m.score ? ` <span class="muted">${esc(m.score)}</span>` : ''}</div>`).join('') : '<div class="muted">Pas encore de résultat.</div>'}</div>
+    <div class="tvqr"><div class="qrBox" id="qr"></div><small>Suivez sur votre téléphone</small></div></div>`;
+}
+
+function computeViews() {
+  const v = [];
+  if (c.phase === 'pools' && c.pools) v.push(['pools', 'Phase de poules']);
+  if (c.matches.some((m) => m.ph === 'main')) v.push(['main', 'Tableau principal']);
+  const conso = c.matches.filter((m) => m.ph === 'conso' && !m.bye);
+  if (conso.length) v.push(['conso', 'Consolante']);
+  return v;
+}
+
+function render() {
+  if (!c) { app.innerHTML = '<div class="disp"><div class="empty">Aucun concours à l’affiche.</div></div>'; return; }
+  let body, title;
+  if (c.status === 'ouvert' || c.status === 'brouillon' || !c.matches.length) { title = 'Inscriptions'; body = preDraw(); }
+  else {
+    views = computeViews();
+    // si un match est en cours dans la consolante et pas dans le tableau principal, on reste un peu plus sur la consolante
+    const [k, label] = views[view % views.length] || ['main', 'Tableau'];
+    title = c.status === 'termine' ? 'Résultats' : 'En direct';
+    const dots = views.length > 1 ? `<div class="tvdots">${views.map((x, i) => `<span class="${i === view % views.length ? 'on' : ''}">${esc(x[1])}</span>`).join('')}</div>` : '';
+    body = `<div class="tvmain"><div class="tvviewhead"><h2>${esc(label)}</h2>${dots}</div>${k === 'pools' ? poolsView() : mirrorBracket(c, k)}</div>${strip()}`;
+  }
+  app.innerHTML = `<div class="disp tv">${header(c, title)}${body}<p class="legal" style="margin:0">Concours réservé aux majeurs. L’abus d’alcool est dangereux pour la santé, à consommer avec modération.</p></div>`;
+  const qr = $('#qr'); if (qr && typeof QRCode !== 'undefined') new QRCode(qr, { text: `${SITE_URL}/?c=${c.id}`, width: 512, height: 512 });
+  document.querySelectorAll('[data-asset="logo"]').forEach((img) => { if (!img.src) img.src = `${ASSETS_URL}/${LOGO_PATH}`; });
+}
+
+async function load() {
+  const { data } = await sb.from('contests').select('id,status,date').neq('status', 'brouillon').order('date');
+  const list = data || [];
+  const pick = list.find((x) => x.status === 'en_cours') || list.find((x) => x.status === 'ouvert' && x.date >= today()) || list[list.length - 1];
+  if (!pick) { c = null; render(); return; }
+  if (pick.id !== c?.id) subscribe(pick.id);
+  const [full, { data: rec }] = await Promise.all([loadContestFull(pick.id), sb.from('records').select('*').eq('week_start', weekMonday()).order('score', { ascending: false })]);
+  c = full; records = rec || []; render();
+}
+function subscribe(id) {
+  if (channel) sb.removeChannel(channel);
+  channel = sb.channel('suivi-' + id)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `contest_id=eq.${id}` }, soon)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'contests' }, soon)
+    .subscribe();
+}
+function soon() { clearTimeout(timer); timer = setTimeout(load, 400); }
+
+venue = await loadVenue(); settings = venue.settings;
+await load();
+setInterval(() => { page++; render(); }, 10000);   // pages d'équipes et chronos
+setInterval(() => { if (views.length > 1) { view++; render(); } }, 20000);   // alterne tableau principal / consolante / poules
+setInterval(load, 30000);                          // inscriptions et pointage (non diffusés en temps réel au public)
+</script>
+</body>
+</html>

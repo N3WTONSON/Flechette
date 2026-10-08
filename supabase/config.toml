@@ -1,0 +1,14 @@
+project_id = "ifjiysdhxmidiswcsiuq"
+
+# Fonctions de ce projet (déployées automatiquement par GitHub Actions).
+# report : résultat déclaré par les joueurs (clé publique du site).
+# push et sync-store : appelées par la base elle-même (tâches planifiées), sans jeton.
+
+[functions.report]
+verify_jwt = true
+
+[functions.push]
+verify_jwt = false
+
+[functions.sync-store]
+verify_jwt = false

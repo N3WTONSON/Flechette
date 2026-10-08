@@ -1,0 +1,16 @@
+# Fichiers volumineux : à déposer dans Supabase Storage (bucket « assets »), pas dans le dépôt
+*.mp4
+*.webm
+*.mov
+*.psd
+*.ai
+*.zip
+web/logo.png
+web/assets/
+# Divers
+.DS_Store
+node_modules/
+supabase/.temp/
+supabase/.branches/
+.env
+.env.*

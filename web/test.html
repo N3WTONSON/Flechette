@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Test téléphone · Fléchettes V and B Lattes</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1d1d1b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Fléchettes">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700;900&family=Nunito+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+  .checks{list-style:none;margin:0;padding:0}
+  .checks li{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+  .checks li:last-child{border-bottom:0}
+  .dot{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:14px;background:#ececea;color:#5e5e5a}
+  .dot.ok{background:#2e7a72;color:#fff}.dot.ko{background:#d9532b;color:#fff}.dot.warn{background:#fbba00;color:#1d1d1b}
+  .checks b{display:block}.checks .muted{display:block}
+  .step{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+  .step input{width:22px;height:22px;margin-top:2px;flex:none;accent-color:#2e7a72}
+  .score{font:900 40px var(--head, Merriweather, serif)}
+</style>
+</head>
+<body>
+<div class="wrap" style="max-width:720px">
+  <header class="top">
+    <div class="hero"><div class="stack" style="gap:6px">
+      <h1 class="brand"><img class="logo" data-asset="logo" alt="V and B Montpellier Lattes" onload="document.getElementById('venue').hidden=true" onerror="this.remove()"><span>Fléchettes</span></h1>
+      <div class="eyebrow" id="venue">V and B Montpellier Lattes</div>
+      <div class="tagline">Page test <b>·</b> téléphone</div>
+    </div></div>
+  </header>
+  <main id="main" class="stack">
+    <section class="panel"><div class="row" style="justify-content:space-between;align-items:flex-end"><div><h2 style="margin:0">Ce téléphone est-il prêt ?</h2><p class="muted small" style="margin:4px 0 0">Vérifications automatiques, rien n’est enregistré dans les vrais concours.</p></div><div class="score num" id="score">…</div></div>
+      <ul class="checks" id="checks"></ul>
+      <div class="row"><button class="btn ghost" id="rerun">Relancer les vérifications</button></div></section>
+
+    <section class="panel"><h2>Notification de test</h2><p class="small">Touchez le bouton, acceptez les notifications, puis <b>verrouillez le téléphone</b> : la notification doit apparaître en quelques secondes.</p>
+      <div id="pushBox"></div></section>
+
+    <section class="panel"><h2>Parcours joueur complet</h2><div id="journey"><div class="empty">Chargement…</div></div></section>
+
+    <section class="panel"><h2>Ce téléphone</h2><div id="device" class="small"></div>
+      <div class="row" style="margin-top:10px"><button class="btn ghost sm" id="reset">Remettre ce téléphone à zéro</button></div>
+      <p class="muted small">Efface les inscriptions, codes d’équipe et le profil gardés sur ce téléphone, pour refaire le parcours comme un nouveau joueur.</p></section>
+  </main>
+  <p class="legal"><a href="./">Page joueurs</a><br>Concours réservé aux majeurs. L’abus d’alcool est dangereux pour la santé, à consommer avec modération.</p>
+</div>
+<script type="module" src="js/assets.js"></script>
+<script type="module">
+import { sb } from './js/sb.js';
+import { SUPABASE_ANON_KEY } from './config.js';
+import { $, esc, toast } from './js/util.js';
+import { subscribeDevice, isIOS, standalone } from './js/push.js';
+
+const TEST_ID = '7e570000-0000-4000-8000-000000000001';
+const list = $('#checks');
+const icon = { ok: '✓', ko: '✕', warn: '!', run: '…' };
+let results = {};
+
+function row(id, title) { list.insertAdjacentHTML('beforeend', `<li id="ck-${id}"><span class="dot">…</span><span><b>${esc(title)}</b><span class="muted small">En cours…</span></span></li>`); }
+function set(id, st, msg) { results[id] = st; const li = $('#ck-' + id); if (!li) return; li.querySelector('.dot').className = 'dot ' + st; li.querySelector('.dot').textContent = icon[st]; li.querySelector('.muted').innerHTML = msg; score(); }
+function score() { const v = Object.values(results), ok = v.filter((x) => x === 'ok').length; $('#score').textContent = `${ok}/${v.length}`; }
+const timeout = (p, ms) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('délai dépassé')), ms))]);
+
+const CHECKS = [
+  ['config', 'Configuration du site', async () => SUPABASE_ANON_KEY.startsWith('__') ? ['ko', 'Clé Supabase absente : relancez le déploiement GitHub (Actions › Déployer).'] : ['ok', 'Site publié avec la clé du projet.']],
+  ['db', 'Connexion à la base', async () => { const t = performance.now(); const { data, error } = await timeout(sb.from('venues').select('name').eq('id', 1).single(), 10000); if (error || !data) throw new Error(error?.message || 'aucune réponse'); return ['ok', `Réponse en ${Math.round(performance.now() - t)} ms.`]; }],
+  ['contests', 'Concours visibles', async () => { const { data, error } = await sb.from('contests').select('id,status').neq('status', 'brouillon'); if (error) throw error; const test = data.find((c) => c.id === TEST_ID); return [data.length ? 'ok' : 'warn', `${data.length} concours publié(s).${test ? ' Concours de test présent.' : ' Pas de concours de test (staff › Réglages).'}`]; }],
+  ['realtime', 'Mises à jour en direct', () => new Promise((res) => { let done = false; const ch = sb.channel('test-' + Date.now()).on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {}); setTimeout(() => { if (!done) { done = true; sb.removeChannel(ch); res(['ko', 'Pas de connexion en direct : le tableau ne se mettra à jour qu’en rechargeant la page.']); } }, 10000); ch.subscribe((s) => { if (done) return; if (s === 'SUBSCRIBED') { done = true; sb.removeChannel(ch); res(['ok', 'Tableau, Mon match et écran TV se mettent à jour tout seuls.']); } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') { done = true; res(['ko', 'Connexion en direct refusée (' + s + ').']); } }); })],
+  ['fn', 'Serveur (résultats et notifications)', async () => { const [p, r] = await Promise.all([sb.functions.invoke('push', { body: { action: 'key' } }), sb.functions.invoke('report', { body: { pin: 'x' } })]); const pushOk = !!p.data?.publicKey, reportOk = !r.error || r.error.context?.status === 400; return [pushOk && reportOk ? 'ok' : 'ko', `${pushOk ? 'Notifications : prêtes' : 'Notifications : fonction « push » absente'} · ${reportOk ? 'Déclaration des résultats : prête' : 'Déclaration des résultats : fonction « report » absente'}.`]; }],
+  ['storage', 'Mémoire du téléphone', async () => { localStorage.setItem('vb-test', '1'); const ok = localStorage.getItem('vb-test') === '1'; localStorage.removeItem('vb-test'); return ok ? ['ok', 'Le code d’équipe et l’inscription restent sur ce téléphone.'] : ['ko', 'Navigation privée ? Le code d’équipe ne sera pas retenu.']; }],
+  ['sw', 'Application installable', async () => { if (!('serviceWorker' in navigator)) return ['ko', 'Navigateur trop ancien.']; await timeout(navigator.serviceWorker.register('sw.js'), 10000); return ['ok', standalone() ? 'Ouverte depuis l’écran d’accueil.' : 'Peut être ajoutée à l’écran d’accueil (menu du navigateur › Ajouter à l’écran d’accueil).']; }],
+  ['notif', 'Notifications', async () => {
+    const ok = 'PushManager' in window && 'Notification' in window;
+    if (!ok) return isIOS() && !standalone() ? ['warn', 'iPhone : touchez <b>Partager › Sur l’écran d’accueil</b>, ouvrez l’application depuis l’icône, puis rouvrez cette page (adresse se terminant par test.html).'] : ['ko', 'Ce navigateur ne gère pas les notifications. Essayez Chrome.'];
+    if (Notification.permission === 'denied') return ['ko', 'Bloquées pour ce site : réglages du téléphone › notifications du navigateur.'];
+    return [Notification.permission === 'granted' ? 'ok' : 'warn', Notification.permission === 'granted' ? 'Autorisées. Faites la notification de test ci-dessous.' : 'Pas encore autorisées : utilisez le bouton « Notification de test ».'];
+  }],
+];
+
+async function run() {
+  list.innerHTML = ''; results = {};
+  CHECKS.forEach(([id, t]) => row(id, t));
+  for (const [id, , fn] of CHECKS) { try { const [st, msg] = await fn(); set(id, st, msg); } catch (e) { set(id, 'ko', 'Erreur : ' + esc(e.message || e)); } }
+  pushBox(); journey();
+}
+
+function pushBox() {
+  const el = $('#pushBox'), ok = 'PushManager' in window && 'Notification' in window;
+  el.innerHTML = ok ? '<button class="btn red xl" id="pushTest">Recevoir une notification de test</button><p class="muted small" id="pushMsg"></p>'
+    : `<div class="notice">${isIOS() && !standalone() ? 'Sur iPhone, ajoutez d’abord l’application à l’écran d’accueil (Partager › Sur l’écran d’accueil), puis ouvrez cette page depuis l’icône.' : 'Ce navigateur ne gère pas les notifications.'}</div>`;
+  $('#pushTest')?.addEventListener('click', async (e) => {
+    const b = e.currentTarget, msg = $('#pushMsg'); b.disabled = true; b.textContent = 'Envoi…'; msg.textContent = '';
+    try {
+      const sub = await subscribeDevice();
+      const { data, error } = await sb.functions.invoke('push', { body: { action: 'test', subscription: sub } });
+      if (error || !data?.ok) throw new Error('Le service de notifications a refusé l’envoi' + (data?.status ? ` (code ${data.status})` : '') + '.');
+      msg.innerHTML = '<b>Envoyée.</b> Elle doit apparaître dans quelques secondes. Rien reçu après 1 minute ? Vérifiez le mode « Ne pas déranger » et les réglages de notifications du navigateur.';
+      set('notif', 'ok', 'Autorisées et abonnées sur ce téléphone.');
+    } catch (err) { msg.textContent = err.message; }
+    b.disabled = false; b.textContent = 'Renvoyer une notification de test';
+  });
+}
+
+async function journey() {
+  const el = $('#journey');
+  const { data: c } = await sb.from('contests').select('*').eq('id', TEST_ID).maybeSingle();
+  if (!c) { el.innerHTML = '<div class="notice">Pas de concours de test pour l’instant. Un membre du staff le crée dans l’espace staff : <b>Réglages › Concours de test › Créer ou remettre à zéro</b>. Rechargez ensuite cette page.</div>'; return; }
+  const done = JSON.parse(localStorage.getItem('vb-test-steps') || '{}');
+  const reg = JSON.parse(localStorage.getItem('vb-reg-' + TEST_ID) || 'null'), pin = JSON.parse(localStorage.getItem('vb-pin-' + TEST_ID) || 'null');
+  const u = (tab) => `./?c=${TEST_ID}&tab=${tab}`;
+  const steps = [
+    ['inscription', 'S’inscrire depuis ce téléphone', `Ouvrez <a href="${u('concours')}">le concours de test</a>, remplissez le formulaire avec votre vrai numéro et un nom d’équipe. 12 places sur 13 sont déjà prises : le premier téléphone est inscrit, le suivant passe en <b>liste d’attente</b>.${reg ? ` <br><b>✓ Inscription trouvée sur ce téléphone : ${esc(reg.team)}.</b>` : ''}`],
+    ['notifs', 'Activer les notifications', 'Sur l’écran de confirmation, touchez <b>Activer les notifications</b>.'],
+    ['attente', 'Place libérée (avec 2 téléphones)', 'Inscrivez un 2e téléphone : il est en liste d’attente, sans code. Le staff touche <b>Désinscrire</b> sur une équipe (onglet Équipes) : le 2e téléphone reçoit « Une place s’est libérée ! » et son code apparaît dans « Mon match ».'],
+    ['code', 'Code d’équipe dans Mon match', `<a href="${u('monmatch')}">Mon match</a> affiche votre équipe sans rien saisir.${pin ? ` <b>✓ Code retenu : ${esc(pin.pin)}.</b>` : ''} Sans inscription, essayez le code 1001 (Les Flèches).`],
+    ['match', 'Match lancé : notification « À vous de jouer »', 'Le staff pointe votre équipe présente (Jour J) puis lance le tirage. Quand votre match passe sur une machine, le téléphone reçoit « À vous de jouer : machine 1 ou 2 ».'],
+    ['resultat', 'Déclarer le résultat', `Dans <a href="${u('monmatch')}">Mon match</a> : <b>Nous avons gagné</b> ou <b>Nous avons perdu</b>, puis Confirmer. Vérifiez sur l’écran TV (suivi.html) et l’espace staff que le tableau a bougé.`],
+    ['scores', 'Mes scores', `L’onglet <a href="./?tab=scores">Mes scores</a> liste vos matchs, liés à votre numéro.`],
+    ['retour', 'Nom d’équipe gardé', 'Le staff efface puis recrée le concours de test ; réinscrivez-vous : votre numéro, vos prénoms et votre nom d’équipe sont déjà remplis.'],
+  ];
+  el.innerHTML = `<p class="small">Concours de test du ${esc(new Date(c.date + 'T12:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }))} · ${c.status === 'ouvert' ? 'inscriptions ouvertes' : c.status === 'en_cours' ? 'en cours' : c.status}. Cochez chaque étape réussie.</p>`
+    + steps.map(([k, t, d]) => `<label class="step"><input type="checkbox" data-step="${k}"${done[k] ? ' checked' : ''}><span><b>${t}</b><br><span class="small">${d}</span></span></label>`).join('')
+    + `<p class="small" id="jScore"></p>`;
+  const upd = () => { const n = el.querySelectorAll('[data-step]:checked').length; $('#jScore').innerHTML = n === steps.length ? '<b>Tout fonctionne sur ce téléphone 🎯</b>' : `${n}/${steps.length} étapes validées.`; };
+  el.querySelectorAll('[data-step]').forEach((i) => i.addEventListener('change', () => { done[i.dataset.step] = i.checked; localStorage.setItem('vb-test-steps', JSON.stringify(done)); upd(); }));
+  upd();
+}
+
+function device() {
+  const ua = navigator.userAgent, ios = ua.match(/OS (\d+)_(\d+)/), android = ua.match(/Android (\d+)/);
+  const browser = /CriOS|Chrome/.test(ua) && !/Edg/.test(ua) ? 'Chrome' : /Firefox|FxiOS/.test(ua) ? 'Firefox' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Edg/.test(ua) ? 'Edge' : /Safari/.test(ua) ? 'Safari' : 'Autre';
+  const sys = ios && isIOS() ? `iPhone / iPad, iOS ${ios[1]}.${ios[2]}${+ios[1] < 16 || (+ios[1] === 16 && +ios[2] < 4) ? ' (notifications : iOS 16.4 minimum)' : ''}` : android ? `Android ${android[1]}` : 'Ordinateur ou autre';
+  $('#device').innerHTML = `<div class="facts"><div class="fact"><span>Système</span><b>${esc(sys)}</b></div><div class="fact"><span>Navigateur</span><b>${esc(browser)}</b></div><div class="fact"><span>Écran</span><b>${screen.width} × ${screen.height}</b></div><div class="fact"><span>Mode</span><b>${standalone() ? 'Application installée' : 'Navigateur'}</b></div></div>`;
+}
+
+$('#rerun').addEventListener('click', run);
+$('#reset').addEventListener('click', () => {
+  Object.keys(localStorage).filter((k) => /^vb-(reg|pin|me|push|test)/.test(k)).forEach((k) => localStorage.removeItem(k));
+  toast('Téléphone remis à zéro'); run();
+});
+device(); run();
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# Déploie tout à chaque push sur main : base Supabase (tables, fonctions SQL, tâches planifiées),
+# fonctions Supabase (report, push, sync-store), puis le site sur GitHub Pages.
+# Rien à exécuter à la main. Secrets à créer une fois dans GitHub (Settings › Secrets and variables › Actions) :
+#   SUPABASE_ACCESS_TOKEN : jeton personnel Supabase (supabase.com › Account › Access Tokens)
+#   STAFF_KEY             : une longue suite de caractères au hasard, pour autoriser le premier appareil du staff
+name: Déployer
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      STAFF_KEY: ${{ secrets.STAFF_KEY }}
+      PROJECT_REF: ifjiysdhxmidiswcsiuq
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Base de données Supabase
+        run: node scripts/deploy-supabase.mjs
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Fonctions Supabase
+        run: supabase functions deploy --project-ref "$PROJECT_REF" --use-api
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v4

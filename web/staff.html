@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Staff · Fléchettes V and B Lattes</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1d1d1b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Fléchettes">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700;900&family=Nunito+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="hero"><div class="stack" style="gap:6px">
+      <!-- logo du magasin (bucket Supabase « assets »), juste avant le titre ; le nom en texte ne s'affiche que si l'image ne charge pas -->
+      <h1 class="brand"><img class="logo" data-asset="logo" alt="V and B Montpellier Lattes" onload="document.getElementById('venue').hidden=true" onerror="this.remove()"><span>Fléchettes</span></h1>
+      <div class="eyebrow" id="venue">V and B Montpellier Lattes</div>
+      <div class="tagline">Espace staff <b>·</b> concours</div>
+    </div><div id="art" aria-hidden="true"></div></div>
+    <div class="headActions" id="topbar"></div>
+  </header>
+  <nav class="tabs hidden" role="tablist" id="tabs"></nav>
+  <main id="main"><div class="empty">Chargement…</div></main>
+  <p class="legal">Concours réservé aux majeurs. L’abus d’alcool est dangereux pour la santé, à consommer avec modération.</p>
+</div>
+<script type="module" src="js/assets.js"></script>
+<script type="module" src="js/staff.js"></script>
+</body>
+</html>
